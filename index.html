@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>SMARTFUZE AQUA</title>
+  <meta name="description" content="SMARTFUZE AQUA - shrimp pond monitoring">
+  <meta name="theme-color" content="#050B11">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AQUA">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Main navigation">
+      <div class="brand">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#logo"/></svg>
+        <div class="brand-text"><b>SMARTFUZE</b><span>AQUA</span></div>
+      </div>
+      <nav class="nav" id="sideNav"></nav>
+      <div class="sidebar-foot">
+        <div class="conn" id="sideConn"><span class="chip off"><span class="dot"></span>Connecting</span></div>
+        <div>Version 2.0.3, real hardware data only</div>
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <div class="topbar">
+        <div class="mobile-brand">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#logo"/></svg>
+          <div><b>SMARTFUZE</b><span>AQUA</span></div>
+        </div>
+        <div>
+          <h1 id="pageTitle">Overview</h1>
+          <div class="sub" id="pageSub"></div>
+        </div>
+        <div class="spacer"></div>
+        <div id="pondPicker"></div>
+      </div>
+      <div class="conn-banner" id="connBanner" role="status">Lost connection to the AQUA server. Values shown may be out of date. Reconnecting…</div>
+      <div id="view" class="grid" tabindex="-1"></div>
+    </main>
+  </div>
+
+  <nav class="bottom-nav" id="bottomNav" aria-label="Mobile navigation"></nav>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div id="modalRoot"></div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="lg-aqua" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#35E1C1"/><stop offset="1" stop-color="#34B8FF"/>
+      </linearGradient>
+      <symbol id="logo" viewBox="0 0 64 64">
+        <rect x="2" y="2" width="60" height="60" rx="16" fill="#07131F" stroke="url(#lg-aqua)" stroke-width="2"/>
+        <path d="M32 12c-7 9-13 16.5-13 24a13 13 0 0 0 26 0c0-7.5-6-15-13-24z" fill="none" stroke="url(#lg-aqua)" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M22 39c3.3 2.6 6.7 2.6 10 0s6.7-2.6 10 0" fill="none" stroke="#35E1C1" stroke-width="2.6" stroke-linecap="round"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <noscript><p style="padding:20px">SMARTFUZE AQUA needs JavaScript enabled.</p></noscript>
+  <script src="/app.js"></script>
+</body>
+</html>

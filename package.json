@@ -1,0 +1,20 @@
+{
+  "name": "smartfuze-aqua",
+  "version": "2.0.3",
+  "description": "SMARTFUZE AQUA - aquaculture / shrimp pond monitoring platform (real ESP32 telemetry only)",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check lib/store.js && node --check lib/ph.js && node --check lib/alerts.js && node --check lib/aquaculture.js && node --check lib/notify.js && node --check lib/auth.js && node --check lib/bus.js && node --check tools/admin.js && node --check public/app.js && node --check public/sw.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "aedes": "0.51.3",
+    "express": "4.21.2",
+    "ws": "8.18.0"
+  },
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Update SMARTFUZE AQUA from GitHub. Data, logins and settings are kept.
+set -euo pipefail
+[ "$(id -u)" -eq 0 ] || { echo "请用 sudo aqua-update"; exit 1; }
+REPO="$(sed -n 1p /etc/aqua/repo)"; BRANCH="$(sed -n 2p /etc/aqua/repo)"
+APP=/opt/aqua
+TMP="$(mktemp -d)"
+echo "下载 $REPO ($BRANCH) ..."
+curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" | tar xz -C "$TMP" --strip-components=1
+[ -f "$TMP/server.js" ] || { echo "下载内容不完整，已取消"; exit 1; }
+rm -rf "$APP.new"; mkdir -p "$APP.new"; cp -a "$TMP"/. "$APP.new"/; rm -rf "$APP.new/data" "$APP.new/node_modules" "$TMP"
+( cd "$APP.new" && { npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund; } )
+/usr/local/bin/aqua-backup || true
+rm -rf "$APP.old"; mv "$APP" "$APP.old"; mv "$APP.new" "$APP"; chown -R root:root "$APP"
+install -m 755 "$APP/cloud/aqua-update" /usr/local/bin/aqua-update
+install -m 755 "$APP/cloud/aqua-reset-password" /usr/local/bin/aqua-reset-password
+systemctl restart aqua
+sleep 3
+if curl -fsS http://127.0.0.1:3000/api/auth/status >/dev/null; then
+  echo "更新完成，AQUA 运行中。"
+else
+  echo "新版本启动失败，恢复旧版本..."
+  rm -rf "$APP"; mv "$APP.old" "$APP"; systemctl restart aqua
+  echo "已恢复。运行 journalctl -u aqua -n 50 查看原因。"; exit 1
+fi

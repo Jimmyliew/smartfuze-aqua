@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 800" font-family="Segoe UI, Bahnschrift, Arial, sans-serif" font-size="14">
+  <rect width="1100" height="800" fill="#ffffff"/>
+  <text x="40" y="38" font-size="22" font-weight="700" fill="#0b2233">SMARTFUZE AQUA v2.0.1  ESP32 接线图 / Wiring</text>
+  <text x="40" y="60" fill="#55697a">只接低压信号线（3.3V / 5V）。所有 230V 接线由持证电工完成。 Low-voltage signals only. Mains work by a licensed electrician.</text>
+
+  <!-- ESP32 -->
+  <rect x="40" y="90" width="210" height="650" rx="14" fill="#0b2233"/>
+  <text x="145" y="125" fill="#35E1C1" font-size="20" font-weight="700" text-anchor="middle">ESP32</text>
+  <text x="145" y="145" fill="#a9c2cf" font-size="12" text-anchor="middle">Dev Module</text>
+  <g fill="#fff" font-size="14" text-anchor="end">
+    <text x="236" y="185">3V3</text><text x="236" y="215">5V (VIN)</text><text x="236" y="245">GND</text>
+    <text x="236" y="305">GPIO4</text><text x="236" y="375">GPIO34</text><text x="236" y="485">GPIO27</text>
+    <text x="236" y="595">GPIO25</text><text x="236" y="640">GPIO26</text><text x="236" y="705">GPIO35</text>
+  </g>
+  <g fill="#35E1C1"><circle cx="250" cy="180" r="5"/><circle cx="250" cy="210" r="5"/><circle cx="250" cy="240" r="5"/><circle cx="250" cy="300" r="5"/><circle cx="250" cy="370" r="5"/><circle cx="250" cy="480" r="5"/><circle cx="250" cy="590" r="5"/><circle cx="250" cy="635" r="5"/><circle cx="250" cy="700" r="5"/></g>
+  <g font-size="12" fill="#55697a"><text x="262" y="184">→ 传感器 3.3V 电源</text><text x="262" y="214">→ pH 模块 V+、流量计红线</text><text x="262" y="244">→ 所有 GND 接在一起 (common ground)</text></g>
+
+  <g stroke="#0b2233" stroke-width="2.5" fill="none">
+    <path d="M255 300 H760"/>
+    <path d="M255 370 H440"/><path d="M520 370 H760"/><path d="M380 370 V385"/><path d="M380 425 V434"/>
+    <path d="M255 480 H420"/><path d="M500 480 H760"/><path d="M360 480 V495"/><path d="M360 535 V544"/>
+    <path d="M255 590 H760"/><path d="M255 635 H760"/>
+    <path d="M255 700 H600"/>
+  </g>
+  <g fill="#0b2233"><circle cx="380" cy="370" r="4"/><circle cx="360" cy="480" r="4"/></g>
+  <g fill="#fff" stroke="#c0392b" stroke-width="2">
+    <rect x="440" y="360" width="80" height="20" rx="3"/><rect x="370" y="385" width="20" height="40" rx="3"/>
+    <rect x="420" y="470" width="80" height="20" rx="3"/><rect x="350" y="495" width="20" height="40" rx="3"/>
+  </g>
+  <g font-size="12" fill="#c0392b" font-weight="700"><text x="480" y="354" text-anchor="middle">20 kΩ (上)</text><text x="398" y="410">10 kΩ (下)</text><text x="460" y="464" text-anchor="middle">10 kΩ (上)</text><text x="378" y="520">20 kΩ (下)</text></g>
+  <g stroke="#0b2233" stroke-width="2.5"><path d="M368 434 H392 M372 439 H388 M376 444 H384"/><path d="M348 544 H372 M352 549 H368 M356 554 H364"/></g>
+  <g font-size="11" fill="#55697a"><text x="398" y="446">GND</text><text x="378" y="556">GND</text></g>
+
+  <g font-size="13">
+    <rect x="760" y="272" width="310" height="56" rx="8" fill="#eaf8f5" stroke="#35a891"/>
+    <text x="772" y="293" font-weight="700">① DS18B20 水温探头（黄线 DATA）</text>
+    <text x="772" y="313" fill="#55697a" font-size="12">红→3V3  黑→GND  DATA 与 3V3 之间接 4.7kΩ 上拉</text>
+    <rect x="760" y="342" width="310" height="56" rx="8" fill="#eaf8f5" stroke="#35a891"/>
+    <text x="772" y="363" font-weight="700">② pH 模块 PO（经 20k/10k 分压）</text>
+    <text x="772" y="383" fill="#55697a" font-size="12">V+→5V  G→GND   GPIO34 电压 = PO ÷ 3</text>
+    <rect x="760" y="452" width="310" height="56" rx="8" fill="#fff6e0" stroke="#d9a520"/>
+    <text x="772" y="473" font-weight="700">③ 流量传感器 信号线（黄）</text>
+    <text x="772" y="493" fill="#55697a" font-size="12">红→5V  黑→GND  10k/20k 分压把 5V 降到 3.3V</text>
+    <rect x="760" y="570" width="310" height="40" rx="8" fill="#fff6e0" stroke="#d9a520"/>
+    <text x="772" y="595" font-weight="700">④ 低水位浮球：一端→GPIO25 另一端→GND</text>
+    <rect x="760" y="615" width="310" height="40" rx="8" fill="#fff6e0" stroke="#d9a520"/>
+    <text x="772" y="640" font-weight="700">⑤ 高水位浮球：一端→GPIO26 另一端→GND</text>
+  </g>
+
+  <rect x="600" y="670" width="150" height="60" rx="8" fill="#f2ecff" stroke="#8a63d2"/>
+  <text x="675" y="693" text-anchor="middle" font-weight="700" font-size="13">⑥ SCT-013-005</text>
+  <text x="675" y="713" text-anchor="middle" font-size="11" fill="#55697a">3.5mm 插头：尖→GPIO35</text>
+  <path d="M750 700 H800" stroke="#0b2233" stroke-width="2.5"/>
+  <rect x="800" y="658" width="270" height="84" rx="8" fill="#f2ecff" stroke="#8a63d2"/>
+  <text x="812" y="678" font-weight="700" font-size="13">偏置电路（套管→中点）</text>
+  <text x="812" y="698" font-size="12" fill="#55697a">10kΩ：3V3 → 中点   10kΩ：中点 → GND</text>
+  <text x="812" y="716" font-size="12" fill="#55697a">10µF 电容：中点 → GND（负极接 GND）</text>
+  <text x="812" y="734" font-size="12" fill="#55697a">钳子只夹气泵电源线的一根火线</text>
+
+  <text x="40" y="780" font-size="12" fill="#55697a">③④⑤⑥ 为可选传感器：固件中 ENABLE_FLOW_SENSOR / ENABLE_LEVEL_SWITCHES / ENABLE_AIRPUMP_CT 改为 1 才会启用。未启用 = 仪表盘显示"Not installed"。</text>
+</svg>
