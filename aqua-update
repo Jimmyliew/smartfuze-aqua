@@ -40,7 +40,7 @@ normalize_layout "$TMP" || { echo "已取消更新，现有版本继续运行"; 
 rm -rf "$APP.new"; mkdir -p "$APP.new"; cp -a "$TMP"/. "$APP.new"/; rm -rf "$APP.new/data" "$APP.new/node_modules" "$TMP"
 ( cd "$APP.new" && { npm ci --omit=dev --no-audit --no-fund || npm install --omit=dev --no-audit --no-fund; } )
 /usr/local/bin/aqua-backup || true
-rm -rf "$APP.old"; mv "$APP" "$APP.old"; mv "$APP.new" "$APP"; chown -R root:root "$APP"
+rm -rf "$APP.old"; mv "$APP" "$APP.old"; mv "$APP.new" "$APP"; chown -R root:root "$APP"; chmod 755 "$APP"; chmod -R a+rX "$APP"
 install -m 755 "$APP/cloud/aqua-update" /usr/local/bin/aqua-update
 install -m 755 "$APP/cloud/aqua-reset-password" /usr/local/bin/aqua-reset-password
 systemctl restart aqua
