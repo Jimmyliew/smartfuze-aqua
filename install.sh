@@ -3,6 +3,7 @@
 #  SMARTFUZE AQUA - cloud installer (Ubuntu 24.04 / 22.04)
 #  Run in the DigitalOcean Droplet Console:
 #    curl -fsSL https://raw.githubusercontent.com/<USER>/<REPO>/main/cloud/install.sh | sudo REPO=<USER>/<REPO> bash
+#  (if GitHub flattened the upload, the file is at .../main/install.sh instead; both work)
 #  Safe to run again (it keeps existing data and logins).
 # =====================================================================
 set -euo pipefail
@@ -13,6 +14,34 @@ APP=/opt/aqua
 DATA=/var/lib/aqua
 ETC=/etc/aqua
 TZNAME="${TZNAME:-Asia/Kuala_Lumpur}"
+
+# GitHub's web upload sometimes drops folders and puts every file at the top level.
+# Rebuild the folder layout from the file names so a "flat" repository still installs.
+normalize_layout() {
+  local d="$1"
+  [ -f "$d/server.js" ] || return 0
+  [ -f "$d/lib/store.js" ] && return 0
+  echo "检测到 GitHub 上的文件没有文件夹结构，自动整理中..."
+  _mv_to() {
+    local dest="$1"; shift
+    mkdir -p "$d/$dest"
+    for f in "$@"; do if [ -f "$d/$f" ]; then mv "$d/$f" "$d/$dest/$f"; fi; done
+  }
+  _mv_to lib alerts.js aquaculture.js auth.js bus.js notify.js ph.js store.js
+  _mv_to public app.js index.html manifest.webmanifest styles.css sw.js icon.svg
+  _mv_to public/icons apple-touch-icon.png icon-192.png icon-512.png icon-maskable-512.png
+  _mv_to cloud install.sh aqua-update aqua-reset-password
+  _mv_to tools admin.js
+  _mv_to docs CLOUD_SETUP_ZH.md HARDWARE_ZH.md wiring.svg
+  _mv_to firmware/SMARTFUZE_AQUA_ESP32 SMARTFUZE_AQUA_ESP32.ino
+  local missing=""
+  for f in package.json lib/store.js lib/ph.js lib/alerts.js lib/aquaculture.js lib/notify.js lib/auth.js lib/bus.js \
+           public/app.js public/index.html public/styles.css tools/admin.js cloud/aqua-update cloud/aqua-reset-password; do
+    [ -f "$d/$f" ] || missing="$missing $f"
+  done
+  if [ -n "$missing" ]; then echo "GitHub 仓库缺少这些文件：$missing"; return 1; fi
+  echo "文件整理完成。"
+}
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m%s\033[0m\n' "$*"; }
@@ -96,6 +125,7 @@ TMP="$(mktemp -d)"
 curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" | tar xz -C "$TMP" --strip-components=1 \
   || die "下载失败。请确认 GitHub 仓库是 Public，名字是 $REPO"
 [ -f "$TMP/server.js" ] || die "仓库最外层没有 server.js。上传时要上传压缩包里面的文件，不是外层文件夹"
+normalize_layout "$TMP" || die "GitHub 上的文件不完整，请重新上传 github-upload 压缩包里的全部文件"
 id aqua >/dev/null 2>&1 || useradd --system --home "$DATA" --shell /usr/sbin/nologin aqua
 mkdir -p "$DATA" "$ETC/tls" /var/backups/aqua
 rm -rf "$APP.new"; mkdir -p "$APP.new"
