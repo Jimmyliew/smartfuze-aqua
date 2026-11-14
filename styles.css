@@ -560,3 +560,58 @@ input[type=file] { width: 100%; padding: 10px; border-radius: 9px; border: 1px d
   .table-wrap { max-height: none; }
   .stat-grid.mini { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ---------- v2.1.0 fix: the sidebar must never make the page scroll ---------- */
+@media (min-width: 861px) {
+  .shell { height: 100vh; height: 100dvh; }
+  .sidebar { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(110, 190, 225, 0.25) transparent; }
+  .main { height: 100vh; height: 100dvh; overflow-y: auto; }
+  body.fit-ov .main { overflow-y: auto; }
+}
+/* shorter screens: compact sidebar so everything fits without any scrolling */
+@media (min-width: 861px) and (max-height: 1000px) {
+  .sidebar { padding: 14px 12px 10px; gap: 2px; }
+  .brand { padding: 2px 10px 12px; gap: 10px; }
+  .brand svg { width: 30px; height: 30px; }
+  .brand-text b { font-size: 14px; }
+  .brand-text span { font-size: 18px; margin-top: 2px; }
+  .nav a { padding: 6px 12px; font-size: 13.5px; gap: 10px; }
+  .nav a svg { width: 16px; height: 16px; }
+  .nav a.active::before { top: 6px; bottom: 6px; left: -12px; }
+  .nav-group { margin: 8px 12px 2px; font-size: 10.5px; }
+  .sidebar-foot { padding: 8px 10px; }
+  .sidebar-foot > div:last-child { display: none; }
+  #sideUser { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  #sideUser .side-user { flex: 1; min-width: 0; margin: 0; }
+  #sideUser .side-out { width: auto; height: 28px; margin: 0; padding: 0 10px; flex: none; }
+  .side-user-text b { font-size: 12.5px; }
+  .side-user-text span { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar-foot .conn .chip { padding: 2px 8px; font-size: 11.5px; }
+}
+@media (min-width: 861px) and (max-height: 760px) {
+  .nav a { padding: 4px 12px; }
+  .nav-group { margin: 5px 12px 1px; }
+  .brand { padding-bottom: 8px; }
+  .side-user-text span { display: none; }
+}
+/* very short screens: squeeze the Overview cards a little more */
+@media (min-width: 1100px) and (min-height: 620px) and (max-height: 700px) {
+  body.fit-ov .ph-scale { height: 24px; }
+  body.fit-ov .ph-scale .ticks { display: none; }
+  body.fit-ov .ov-head .notice, body.fit-ov .waiting { padding: 6px 12px; font-size: 12.5px; }
+  body.fit-ov .metric .foot { font-size: 11.5px; }
+  body.fit-ov .ov, body.fit-ov .ov-body { gap: 10px; }
+}
+@media (min-width: 861px) and (max-height: 680px) {
+  .nav a { padding: 3px 12px; font-size: 13px; }
+  .nav-group { margin: 4px 12px 0; }
+  .brand { padding: 0 10px 6px; }
+  .brand svg { width: 26px; height: 26px; }
+  .brand-text span { font-size: 16px; }
+  #sideUser { margin-bottom: 4px; }
+}
+@media (min-width: 1100px) and (min-height: 620px) and (max-height: 660px) {
+  body.fit-ov .metric .value { font-size: 30px; }
+  body.fit-ov .metric .foot { display: none; }
+  body.fit-ov .metric .kv dt:nth-of-type(n+2), body.fit-ov .metric .kv dd:nth-of-type(n+2) { display: none; }
+}
