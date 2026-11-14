@@ -3,7 +3,7 @@
  * can never show an old reading as if it were live. Offline, the shell loads and
  * the dashboard clearly reports that the server is unreachable.
  */
-const CACHE = 'aqua-shell-v2.0.3';
+const CACHE = 'aqua-shell-v2.1.0';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icon.svg',
   '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 

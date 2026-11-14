@@ -67,7 +67,14 @@
     water: '<path d="M9 3h6M10 3v14a2 2 0 0 0 4 0V3"/><path d="M10 11h4"/>',
     cycle: '<path d="M4 12a8 8 0 0 1 14-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M4 20v-5h5"/>',
     level: '<path d="M3 17c3 2 6 2 9 0s6-2 9 0"/><path d="M3 12h18" stroke-dasharray="2 3"/><path d="M12 3v6M9 6l3 3 3-3"/>',
-    o2: '<circle cx="9" cy="14" r="5"/><circle cx="17" cy="7" r="3"/>'
+    o2: '<circle cx="9" cy="14" r="5"/><circle cx="17" cy="7" r="3"/>',
+    poc: '<path d="M9 3h6v4l4 9a3 3 0 0 1-2.7 4.3H7.7A3 3 0 0 1 5 16l4-9z"/><path d="M8 13h8"/><circle cx="11" cy="16.5" r="0.8"/>',
+    finance: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
+    vault: '<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M12 9V7M15 12h2"/>',
+    audit: '<path d="M8 4h11v16H5V7z"/><path d="M8 4v3H5M9 12l2 2 4-4M9 17h6"/>',
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    investor: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'
   };
 
   // ------------------------------------------------------------ state
@@ -78,24 +85,37 @@
     alerts: { rules: [], alerts: [] },
     calibrations: [], controls: null,
     water: { entries: [], limits: {} }, cycles: [], full: null, auth: null, creds: null,
+    biz: { meta: null, pocs: null, pocSel: null, expenses: null, fin: null, finFilter: {}, evidence: null, evFilter: {}, audit: null, auditFilter: {}, users: null },
     history: {}, trendsRange: '24h',
     ws: null, wsOk: false, loaded: false
   };
   try { state.selected = localStorage.getItem('aqua.pond') || null; } catch (_) {}
 
   const ROUTES = [
-    { id: 'overview', title: 'Overview', icon: 'home' },
-    { id: 'ponds', title: 'Ponds', icon: 'ponds' },
-    { id: 'trends', title: 'Trends', icon: 'trends' },
-    { id: 'water', title: 'Water quality', icon: 'water' },
-    { id: 'cycle', title: 'Crop cycle', icon: 'cycle' },
-    { id: 'feeding', title: 'Feeding', icon: 'feed' },
-    { id: 'controls', title: 'Controls', icon: 'controls' },
-    { id: 'apps', title: 'Apps & Integrations', icon: 'apps' },
-    { id: 'alerts', title: 'Alerts', icon: 'alerts' },
-    { id: 'calibration', title: 'Calibration', icon: 'calibration' },
-    { id: 'settings', title: 'Settings', icon: 'settings' }
+    { id: 'overview', title: 'Overview', icon: 'home', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'ponds', title: 'Ponds', icon: 'ponds', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'trends', title: 'Trends', icon: 'trends', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'water', title: 'Water quality', icon: 'water', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'cycle', title: 'Crop cycle', icon: 'cycle', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'feeding', title: 'Feeding', icon: 'feed', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'controls', title: 'Controls', icon: 'controls', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'alerts', title: 'Alerts', icon: 'alerts', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'calibration', title: 'Calibration', icon: 'calibration', group: 'Monitoring', perm: 'monitor.read' },
+    { id: 'poc', title: 'POC research', icon: 'poc', group: 'Business', perm: 'poc.read' },
+    { id: 'finance', title: 'Finance', icon: 'finance', group: 'Business', perm: 'finance.read' },
+    { id: 'evidence', title: 'Evidence vault', icon: 'vault', group: 'Business', perm: 'evidence.read' },
+    { id: 'audit', title: 'Audit log', icon: 'audit', group: 'Business', perm: 'audit.read' },
+    { id: 'investor', title: 'Investor center', icon: 'investor', group: 'Business', perm: 'investor' },
+    { id: 'apps', title: 'Apps & Integrations', icon: 'apps', group: 'System', perm: 'monitor.read' },
+    { id: 'settings', title: 'Settings', icon: 'settings', group: 'System', perm: 'settings.view' }
   ];
+  const hasPerm = p => {
+    const ps = state.auth?.perms || [];
+    if (p === 'investor') return state.auth?.role === 'investor';
+    if (p === 'settings.view') return !!state.auth?.signedIn || ps.includes('monitor.read') || ps.includes('*');
+    return ps.includes('*') || ps.includes(p);
+  };
+  const allowedRoutes = () => ROUTES.filter(r => hasPerm(r.perm));
   const MOBILE = [
     { id: 'overview', label: 'Home', icon: 'home' },
     { id: 'ponds', label: 'Ponds', icon: 'ponds' },
@@ -103,7 +123,8 @@
     { id: 'apps', label: 'Apps', icon: 'apps' },
     { id: 'more', label: 'More', icon: 'more' }
   ];
-  const MORE_IDS = ['trends', 'water', 'cycle', 'controls', 'alerts', 'calibration', 'settings'];
+  const MORE_BASE = ['trends', 'water', 'cycle', 'controls', 'alerts', 'calibration', 'poc', 'finance', 'evidence', 'audit', 'investor', 'settings'];
+  const moreIds = () => MORE_BASE.filter(id => hasPerm(ROUTES.find(r => r.id === id).perm));
 
   const PROVIDER_UI = {
     esp32: { icon: 'chip', desc: 'Sensor node on AQUA MQTT' },
@@ -126,7 +147,8 @@
 
   const route = () => {
     const id = (location.hash.replace(/^#\/?/, '') || 'overview').split('?')[0];
-    return ROUTES.some(r => r.id === id) ? id : 'overview';
+    const ok = allowedRoutes();
+    return ok.some(r => r.id === id) ? id : (ok[0]?.id || 'settings');
   };
   const pondList = () => Object.values(state.ponds).sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
   function selectedPond() {
@@ -151,7 +173,7 @@
     });
     let data = null;
     try { data = await res.json(); } catch (_) {}
-    if (res.status === 401 && state.auth?.required && !path.startsWith('/auth/')) showLogin('Please sign in again.');
+    if (res.status === 401 && !path.startsWith('/auth/') && (state.auth?.required || state.auth?.signedIn)) showLogin('Please sign in again.');
     if (!res.ok) { const err = new Error((data && data.error) || 'Request failed (' + res.status + ')'); err.status = res.status; err.data = data; throw err; }
     return data;
   }
@@ -173,7 +195,9 @@
     }
   };
   async function loadAll() {
-    await Promise.allSettled([load.ponds(), load.info(), load.integrations(), load.feeding(), load.alerts(), load.calibrations(), load.controls(), load.water(), load.cycles(), load.full()]);
+    if (hasPerm('monitor.read')) {
+      await Promise.allSettled([load.ponds(), load.info(), load.integrations(), load.feeding(), load.alerts(), load.calibrations(), load.controls(), load.water(), load.cycles(), hasPerm('config.write') ? load.full() : Promise.resolve()]);
+    }
     state.loaded = true;
   }
 
@@ -352,9 +376,20 @@
   // ------------------------------------------------------------ shell
   function renderNav() {
     const r = route(), n = activeAlerts().length;
-    $('#sideNav').innerHTML = ROUTES.map(x => `<a href="#/${x.id}" class="${x.id === r ? 'active' : ''}" ${x.id === r ? 'aria-current="page"' : ''}>${I(x.icon)}<span>${esc(x.title)}</span>${x.id === 'alerts' && n ? `<span class="badge">${n}</span>` : ''}</a>`).join('');
-    $('#bottomNav').innerHTML = MOBILE.map(x => {
-      const active = x.id === r || (x.id === 'more' && MORE_IDS.includes(r));
+    let lastGroup = '';
+    $('#sideNav').innerHTML = allowedRoutes().map(x => {
+      const head = x.group !== lastGroup ? `<div class="nav-group">${esc(x.group)}</div>` : '';
+      lastGroup = x.group;
+      return head + `<a href="#/${x.id}" class="${x.id === r ? 'active' : ''}" ${x.id === r ? 'aria-current="page"' : ''}>${I(x.icon)}<span>${esc(x.title)}</span>${x.id === 'alerts' && n ? `<span class="badge">${n}</span>` : ''}</a>`;
+    }).join('');
+    const a = state.auth || {};
+    $('#sideUser').innerHTML = a.signedIn
+      ? `<div class="side-user">${I('users')}<div class="side-user-text"><b>${esc(a.username)}</b><span>${esc(a.roleLabel || a.role)}</span></div></div><button class="btn sm ghost side-out" id="sideSignOut">Sign out</button>`
+      : (a.mode === 'local' ? `<button class="btn sm" id="sideSignIn">${I('lock')}Sign in for business data</button>` : '');
+    $('#sideSignOut')?.addEventListener('click', signOut);
+    $('#sideSignIn')?.addEventListener('click', () => showLogin('Sign in to open POC research, finance, evidence and audit records.'));
+    $('#bottomNav').innerHTML = MOBILE.filter(x => x.id === 'more' || hasPerm('monitor.read')).map(x => {
+      const active = x.id === r || (x.id === 'more' && moreIds().includes(r));
       const href = x.id === 'more' ? '#more' : '#/' + x.id;
       return `<a href="${href}" data-id="${x.id}" class="${active ? 'active' : ''}">${I(x.icon)}<span>${x.label}</span>${x.id === 'more' && n ? `<span class="badge">${n}</span>` : ''}</a>`;
     }).join('');
@@ -368,7 +403,7 @@
     if (!a) return;
     e.preventDefault();
     const n = activeAlerts().length;
-    const m = openModal(`<h3>More</h3><div class="list more-sheet">${MORE_IDS.map(id => {
+    const m = openModal(`<h3>More</h3><div class="list more-sheet">${moreIds().map(id => {
       const r = ROUTES.find(x => x.id === id);
       return `<a class="list-item" href="#/${id}">${I(r.icon)}<span class="grow">${esc(r.title)}</span>${id === 'alerts' && n ? `<span class="badge">${n}</span>` : ''}</a>`;
     }).join('')}</div>`);
@@ -1265,7 +1300,8 @@
     const n = f.notifications || { pushover: {} }, po = n.pushover || {}, wd = f.watchdog || {}, il = f.interlock || {};
     const mb = b => (b / 1048576).toFixed(2) + ' MB';
     const pondIds = [...new Set([...pondList().map(p => p.id), ...Object.keys(f.pondProfiles || {})])].sort();
-    return `${accountPanels()}<section class="panel ${po.enabled ? '' : 'attention'}">
+    if (!hasPerm('monitor.read')) return state.auth?.signedIn ? localAccountPanel() : '';
+    return `${accountPanels()}${usersPanel()}<section class="panel ${po.enabled ? '' : 'attention'}">
       <div class="panel-head"><h2>Phone alerts (Pushover)</h2><div class="spacer"></div>${po.enabled ? '<span class="chip ok">On</span>' : '<span class="chip crit">Off: nobody is woken at night</span>'}</div>
       <div class="help small" style="display:grid;gap:6px;margin-bottom:14px">
         <div>1. Install <b>Pushover</b> on every phone that should ring (iPhone and Android) and sign in.</div>
@@ -1355,7 +1391,7 @@
   };
   function accountPanels() {
     const i = state.info || {};
-    if (i.mode !== 'cloud') return '';
+    if (i.mode !== 'cloud') return state.auth?.signedIn ? localAccountPanel() : '';
     const creds = state.creds || [];
     const host = i.publicHost || location.hostname;
     return `<div class="split">
@@ -1375,6 +1411,8 @@
   }
 
   VIEWS.settings.after = () => {
+    localAccountAfter(); usersAfter();
+    if (!hasPerm('monitor.read')) return;
     if (state.info?.mode === 'cloud') {
       if (state.creds === null) { api('/devices/credentials').then(c => { state.creds = c; if (route() === 'settings') render(); }).catch(() => {}); }
       $('#pwSave')?.addEventListener('click', async () => {
@@ -1440,6 +1478,446 @@
     $('#setSave')?.addEventListener('click', async () => put({ siteName: $('#setSite').value, offlineAfterSec: Math.round(Number($('#setOff').value) * 60) }, 'Settings saved'));
   };
 
+  // ================================================================== v2.1.0 business modules
+  const B = state.biz;
+  const myr = v => (isNum(v) ? 'RM ' + v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : DASH);
+  const pend = (v, f, why) => (isNum(v) ? f(v) : `<span class="pending" title="${esc(why)}">${esc(why)}</span>`);
+  const kpi = (label, value, sub = '') => `<div class="stat"><div class="muted small">${label}</div><div class="stat-v">${value}</div>${sub ? `<div class="muted small">${sub}</div>` : ''}</div>`;
+  const STATUS_CLS = { Draft: 'off', Preparing: 'info', Running: 'ok', Harvesting: 'ok', Completed: 'ok', Failed: 'crit', Cancelled: 'off', pending: 'warn', approved: 'ok', rejected: 'crit', paid: 'ok', unpaid: 'warn', verified: 'ok', unverified: 'warn' };
+  const chip = (txt, cls) => `<span class="chip ${cls || STATUS_CLS[txt] || 'off'}">${esc(txt)}</span>`;
+  async function bizMeta() { if (!B.meta) B.meta = await api('/poc/meta'); return B.meta; }
+  const opts = (list, sel, blank) => (blank !== undefined ? `<option value="">${esc(blank)}</option>` : '') + list.map(o => { const [v, l] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}" ${v === sel ? 'selected' : ''}>${esc(l)}</option>`; }).join('');
+  const val = id => $(id)?.value?.trim() ?? '';
+  function needLoad(key, fn) { if (B[key] === null) { B[key] = 'loading'; fn().then(() => { if (!$('#modalRoot').innerHTML) render(); }).catch(e => { B[key] = null; toast(e.message, 'err'); }); return true; } return B[key] === 'loading'; }
+  const loadingView = () => '<section class="panel"><div class="empty">Loading…</div></section>';
+
+  // ------------------------------------------------------------------ POC research
+  VIEWS.poc = () => {
+    if (needLoad('pocs', async () => { await bizMeta(); B.pocs = await api('/poc'); })) return loadingView();
+    if (B.pocSel) return pocDetailView();
+    const list = B.pocs;
+    return `<section class="row"><p class="muted" style="margin:0;max-width:78ch">Each POC is one planned trial with success criteria fixed before it starts. Failed and cancelled POCs stay on record. Numbers come only from linked crop cycles, approved expenses and uploaded evidence.</p><div style="flex:1"></div>
+      ${hasPerm('poc.write') ? `<button class="btn primary" id="pocNew">${I('plus')}New POC</button>` : ''}</section>
+      ${list.length ? `<section class="cards">${list.map(p => `<article class="panel poc-card" data-poc="${esc(p.id)}" tabindex="0" role="button">
+        <div class="row" style="flex-wrap:nowrap"><div style="min-width:0"><div class="muted small">${esc(p.id)} · ${esc(p.siteId)} / ${esc(p.pondId)}</div><h3 class="ellipsis" style="margin:2px 0 0;font-size:17px">${esc(p.name)}</h3></div><div style="flex:1"></div>${chip(p.status)}</div>
+        <div class="stat-grid mini" style="margin-top:12px">
+          ${kpi('Stocked', isNum(p.summary.stocked) ? p.summary.stocked.toLocaleString() : DASH)}
+          ${kpi('Survival', isNum(p.summary.verifiedSurvivalPct) ? p.summary.verifiedSurvivalPct + ' %' : isNum(p.summary.estimatedSurvivalPct) ? p.summary.estimatedSurvivalPct + ' % est.' : DASH)}
+          ${kpi('FCR', isNum(p.summary.finalFcr) ? fmt(p.summary.finalFcr) : isNum(p.summary.estimatedFcr) ? fmt(p.summary.estimatedFcr) + ' est.' : DASH)}
+        </div>
+        <div class="muted small" style="margin-top:10px">${esc(p.startDate || 'Not started')}${p.endDate ? ' to ' + esc(p.endDate) : ''} · ${p.cycleIds.length} cycle(s)</div></article>`).join('')}</section>`
+        : `<section class="panel"><div class="empty big"><b>No POC yet</b>Create the first trial, for example "POC-001 Low-salinity RAS density test". Write the success and failure criteria before stocking.</div></section>`}`;
+  };
+  VIEWS.poc.after = () => {
+    $('#pocNew')?.addEventListener('click', () => pocForm(null));
+    $$('[data-poc]').forEach(c => { const go = () => { B.pocSel = c.dataset.poc; B.pocDetail = null; render(); }; c.addEventListener('click', go); c.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }); });
+    pocDetailAfter();
+  };
+  function pocDetailView() {
+    if (!B.pocDetail || B.pocDetail.id !== B.pocSel) { api('/poc/' + encodeURIComponent(B.pocSel)).then(d => { B.pocDetail = d; render(); }).catch(e => { toast(e.message, 'err'); B.pocSel = null; render(); }); return loadingView(); }
+    const p = B.pocDetail, s = p.summary, f = s.finance, M = B.meta;
+    const next = (M.pocFlow[p.status] || []);
+    const closed = ['Completed', 'Failed', 'Cancelled'].includes(p.status);
+    const cyclesHere = state.cycles.filter(c => c.pondId === p.pondId && !p.cycleIds.includes(c.id));
+    const field = (label, v) => `<div class="kv-row"><span>${label}</span><div>${v ? esc(v).replace(/\n/g, '<br>') : '<span class="muted">Not written</span>'}</div></div>`;
+    return `<section class="row"><button class="btn sm ghost" id="pocBack">← All POCs</button><div style="flex:1"></div>
+        ${hasPerm('poc.write') && !closed ? `<button class="btn sm" id="pocEdit">${I('edit')}Edit</button>` : ''}
+        ${hasPerm('poc.write') ? next.map(n => `<button class="btn sm ${n === 'Failed' || n === 'Cancelled' ? 'danger' : 'primary'}" data-pstatus="${n}">${n === 'Running' ? 'Start (lock criteria)' : 'Move to ' + n}</button>`).join('') : ''}</section>
+      <section class="panel"><div class="row" style="flex-wrap:nowrap"><div style="min-width:0"><div class="muted small">${esc(p.id)} · site ${esc(p.siteId)} · pond ${esc(p.pondId)} · ${esc(p.species)}</div><h2 style="margin:4px 0 0;font-size:22px">${esc(p.name)}</h2></div><div style="flex:1"></div>${chip(p.status)}</div>
+        <div class="muted small" style="margin-top:8px">Start ${esc(p.startDate || DASH)} · End ${esc(p.endDate || DASH)} · Responsible ${esc(p.responsible || DASH)} · Created by ${esc(p.createdBy)} ${dateTime(p.createdAt)}</div></section>
+      <section class="stat-grid">
+        ${kpi('Stocked (PL)', pend(s.stocked, v => v.toLocaleString(), 'No stocking recorded'))}
+        ${kpi('Estimated survival', pend(s.estimatedSurvivalPct, v => v + ' %', s.allClosed ? 'Use verified' : 'No data'), 'counted deaths only')}
+        ${kpi('Verified survival', pend(s.verifiedSurvivalPct, v => v + ' %', 'Pending validation'), 'counted harvest ÷ stocked')}
+        ${kpi('Feed used', isNum(s.feedKg) ? fmt(s.feedKg, 1) + ' kg' : DASH)}
+        ${kpi('FCR', isNum(s.finalFcr) ? fmt(s.finalFcr) : pend(s.estimatedFcr, v => fmt(v) + ' est.', 'Pending'), isNum(s.finalFcr) ? 'final, from harvest' : 'estimate until harvest')}
+        ${kpi('Harvest', pend(s.harvestKg, v => fmt(v, 1) + ' kg', 'Not harvested'))}
+        ${hasPerm('finance.read') && f ? kpi('Operating cost', myr(f.operatingCostMYR), 'approved OPEX') + kpi('Depreciation', myr(f.depreciationMYR), 'CAPEX share in period') + kpi('Cost per kg', pend(f.costPerKgMYR, myr, 'Needs verified harvest')) + kpi('Revenue', pend(f.revenueMYR, myr, 'No sales recorded')) : ''}
+      </section>
+      <div class="split">
+        <section class="panel"><div class="panel-head"><h2>Plan</h2>${p.criteriaLockedAt ? `<span class="chip info">${I('lock')}Criteria locked ${dateTime(p.criteriaLockedAt)}</span>` : '<span class="chip warn">Criteria not locked yet</span>'}</div>
+          <div class="kv-list">${field('Objectives', p.objectives)}${field('Hypothesis', p.hypothesis)}${field('Method', p.method)}${field('Success criteria', p.successCriteria)}${field('Failure criteria', p.failureCriteria)}${field('Expected results', p.expectedResults)}${field('Risks', p.risks)}
+          ${field('Pond size / volume', [p.pondDimension, isNum(p.waterVolumeM3) ? p.waterVolumeM3 + ' m³' : ''].filter(Boolean).join(' · '))}${field('Stocking density', p.stockingDensity)}${field('PL supplier', p.plSupplier)}</div>
+          ${p.criteriaChanges.length ? `<h4 style="margin:14px 0 6px">Changes after start</h4><div class="list">${p.criteriaChanges.map(c => `<div class="list-item"><div class="grow"><div class="title">${esc(c.field)} changed by ${esc(c.by)} · ${dateTime(c.at)}</div><div class="meta">Reason: ${esc(c.reason)}</div><div class="meta">Was: ${esc(c.old)}</div></div></div>`).join('')}</div>` : ''}
+        </section>
+        <section class="panel"><div class="panel-head"><h2>Data completeness</h2><span class="chip ${s.completeness.score >= 80 ? 'ok' : s.completeness.score >= 50 ? 'warn' : 'crit'}">${isNum(s.completeness.score) ? s.completeness.score + ' %' : DASH}</span></div>
+          <div class="list">${s.completeness.items.map(i => `<div class="list-item"><span class="chip ${i.ok ? 'ok' : 'warn'}">${i.ok ? 'Done' : 'Missing'}</span><div class="grow title">${esc(i.label)}</div></div>`).join('')}</div>
+          <div class="panel-head" style="margin-top:16px"><h2>Linked crop cycles</h2></div>
+          ${s.cycleDetails.length ? `<div class="list">${s.cycleDetails.map(c => `<div class="list-item"><div class="grow"><div class="title">${esc(c.id)} · stocked ${esc(c.startDate)}</div><div class="meta">${c.status === 'closed' ? 'closed ' + esc(c.endDate || '') : 'running, day ' + c.summary.doc} · feed ${fmt(c.summary.feedKg, 1)} kg</div></div>${hasPerm('poc.write') && !['Completed', 'Failed'].includes(p.status) ? `<button class="btn sm ghost" data-unlink="${esc(c.id)}">Unlink</button>` : ''}</div>`).join('')}</div>` : '<div class="empty">No crop cycle linked. Start one on the Crop cycle page, then link it here.</div>'}
+          ${hasPerm('poc.write') && !closed && cyclesHere.length ? `<div class="row" style="margin-top:10px;flex-wrap:nowrap"><select id="pocLinkSel">${opts(cyclesHere.map(c => [c.id, c.id + ' (' + c.startDate + ', ' + c.status + ')']))}</select><button class="btn sm" id="pocLink">Link cycle</button></div>` : ''}
+          <p class="muted small">Evidence linked: ${s.evidenceCount} · <a href="#/evidence" data-evpoc="${esc(p.id)}">open in Evidence vault</a>${hasPerm('finance.read') ? ` · <a href="#/finance" data-finpoc="${esc(p.id)}">expenses</a>` : ''}</p>
+        </section>
+      </div>
+      <section class="panel"><div class="panel-head"><h2>Reviews and status history</h2><div class="spacer"></div>${hasPerm('poc.review') ? '<button class="btn sm" id="pocReview">Add review</button>' : ''}</div>
+        <div class="list">${[...p.reviews.map(r => ({ at: r.at, html: `${chip(r.decision.replace('_', ' '), r.decision === 'approved' ? 'ok' : r.decision === 'comment' ? 'info' : 'warn')}<div class="grow"><div class="title">${esc(r.note || 'Approved')}</div><div class="meta">${esc(r.by)} (${esc(r.role)}) · ${dateTime(r.at)} · while ${esc(r.statusAtReview)}</div></div>` })),
+          ...p.statusHistory.map(h => ({ at: h.at, html: `${chip(h.to)}<div class="grow"><div class="title">${esc(h.from)} → ${esc(h.to)}${h.note ? ': ' + esc(h.note) : ''}</div><div class="meta">${esc(h.by)} · ${dateTime(h.at)}</div></div>` }))]
+          .sort((a, b) => b.at.localeCompare(a.at)).map(x => `<div class="list-item">${x.html}</div>`).join('') || '<div class="empty">No reviews yet.</div>'}</div></section>`;
+  }
+  function pocDetailAfter() {
+    if (!B.pocSel || !B.pocDetail) return;
+    const p = B.pocDetail;
+    const reload = async () => { B.pocDetail = await api('/poc/' + encodeURIComponent(p.id)); B.pocs = null; render(); };
+    $('#pocBack')?.addEventListener('click', () => { B.pocSel = null; B.pocDetail = null; render(); });
+    $('#pocEdit')?.addEventListener('click', () => pocForm(p));
+    $$('[data-pstatus]').forEach(b => b.addEventListener('click', () => {
+      const to = b.dataset.pstatus, needNote = to === 'Failed' || to === 'Cancelled';
+      const m = openModal(`<h3>${to === 'Running' ? 'Start this POC' : 'Move to ' + esc(to)}</h3>
+        <p class="muted small">${to === 'Running' ? 'Starting locks the hypothesis, expected results and success / failure criteria. Later changes need a written reason and stay visible.' : needNote ? 'The reason stays on the record. The POC is not hidden.' : ''}</p>
+        <label class="field">Note${needNote ? ' (required)' : ''}<textarea id="psNote" maxlength="1000"></textarea></label>
+        <div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn primary" id="psGo">Confirm</button></div>`);
+      m.querySelector('[data-x]').onclick = closeModal;
+      $('#psGo').onclick = async () => { try { await api(`/poc/${p.id}/status`, { method: 'POST', body: { status: to, note: val('#psNote') } }); closeModal(); toast('Status updated', 'ok'); await reload(); } catch (e) { toast(e.message, 'err'); } };
+    }));
+    $('#pocLink')?.addEventListener('click', async () => { try { await api(`/poc/${p.id}/cycles`, { method: 'POST', body: { cycleId: val('#pocLinkSel') } }); toast('Cycle linked', 'ok'); await reload(); } catch (e) { toast(e.message, 'err'); } });
+    $$('[data-unlink]').forEach(b => b.addEventListener('click', async () => { if (!await confirmDialog('Unlink this cycle?', 'Its data will no longer count in this POC.', 'Unlink')) return; try { await api(`/poc/${p.id}/cycles/${b.dataset.unlink}`, { method: 'DELETE' }); await reload(); } catch (e) { toast(e.message, 'err'); } }));
+    $$('[data-evpoc]').forEach(a => a.addEventListener('click', () => { B.evFilter = { linkType: 'poc', linkId: a.dataset.evpoc }; B.evidence = null; }));
+    $$('[data-finpoc]').forEach(a => a.addEventListener('click', () => { B.finFilter = { pocId: a.dataset.finpoc }; B.expenses = null; }));
+    $('#pocReview')?.addEventListener('click', () => {
+      const m = openModal(`<h3>Review ${esc(p.id)}</h3><div class="form-grid" style="margin-top:12px">
+        <label class="field">Decision<select id="rvDec"><option value="comment">Comment</option><option value="approved">Approve plan / result</option><option value="changes_requested">Changes requested</option></select></label>
+        <label class="field full">Comment<textarea id="rvNote" maxlength="2000"></textarea></label></div>
+        <div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn primary" id="rvGo">Save review</button></div>`);
+      m.querySelector('[data-x]').onclick = closeModal;
+      $('#rvGo').onclick = async () => { try { await api(`/poc/${p.id}/reviews`, { method: 'POST', body: { decision: val('#rvDec'), note: val('#rvNote') } }); closeModal(); await reload(); } catch (e) { toast(e.message, 'err'); } };
+    });
+  }
+  function pocForm(p) {
+    const locked = !!p?.criteriaLockedAt;
+    const ta = (id, label, v, hint = '') => `<label class="field full">${label}${hint ? `<small>${hint}</small>` : ''}<textarea data-pf="${id}" maxlength="4000">${esc(v || '')}</textarea></label>`;
+    const tx = (id, label, v, hint = '') => `<label class="field">${label}${hint ? `<small>${hint}</small>` : ''}<input type="text" data-pf="${id}" value="${esc(v || '')}" maxlength="${id === 'name' ? 120 : 400}"></label>`;
+    const m = openModal(`<h3>${p ? 'Edit ' + esc(p.id) : 'New POC'}</h3>
+      ${locked ? '<p class="notice warn">This POC has started. Changes to the hypothesis, expected results or criteria need a reason and stay in the history.</p>' : ''}
+      <div class="form-grid" style="margin-top:12px">
+        ${tx('name', 'Project name', p?.name)}
+        <label class="field">Pond<span id="pfPond">${pondOptions(p?.pondId || selectedPond()?.id || '')}</span></label>
+        <label class="field">Planned start<input type="date" data-pf="startDate" value="${esc(p?.startDate || '')}"></label>
+        <label class="field">Planned end<input type="date" data-pf="endDate" value="${esc(p?.endDate || '')}"></label>
+        ${tx('responsible', 'Responsible person', p?.responsible)}${tx('plSupplier', 'PL supplier', p?.plSupplier)}
+        ${tx('pondDimension', 'Pond dimension', p?.pondDimension, 'e.g. 3 m × 2 m × 1.2 m')}
+        <label class="field">Water volume (m³)<input type="number" step="0.1" min="0" data-pf="waterVolumeM3" value="${esc(p?.waterVolumeM3 ?? '')}"></label>
+        ${tx('stockingDensity', 'Stocking density', p?.stockingDensity, 'e.g. 300 PL/m³')}${tx('species', 'Species', p?.species || 'Pacific white shrimp (Litopenaeus vannamei)')}
+        ${ta('objectives', 'Objectives', p?.objectives)}${ta('hypothesis', 'Hypothesis', p?.hypothesis)}${ta('method', 'Experiment method', p?.method)}
+        ${ta('successCriteria', 'Success criteria', p?.successCriteria, 'Measurable, e.g. "verified survival ≥ 70 % and FCR ≤ 1.4"')}
+        ${ta('failureCriteria', 'Failure criteria', p?.failureCriteria, 'e.g. "verified survival < 50 % or two oxygen incidents"')}
+        ${ta('expectedResults', 'Expected results', p?.expectedResults)}${ta('risks', 'Risks', p?.risks)}
+        ${locked ? '<label class="field full">Reason for change<input type="text" id="pfReason" maxlength="500"></label>' : ''}
+      </div>
+      <div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn primary" id="pfSave">${p ? 'Save changes' : 'Create POC'}</button></div>`, { wide: true });
+    m.querySelector('[data-x]').onclick = closeModal;
+    $('#pfSave').onclick = async () => {
+      const body = { pondId: $('#pfPond input').value.trim() };
+      m.querySelectorAll('[data-pf]').forEach(i => { body[i.dataset.pf] = i.value; });
+      if (locked) body.reason = val('#pfReason');
+      try {
+        const r = await api(p ? '/poc/' + p.id : '/poc', { method: p ? 'PUT' : 'POST', body });
+        closeModal(); toast(p ? 'Saved' : `${r.id} created`, 'ok'); B.pocs = null; B.pocSel = r.id; B.pocDetail = null; render();
+      } catch (e) { toast(e.message, 'err'); }
+    };
+  }
+
+  // ------------------------------------------------------------------ Finance
+  const finQuery = () => new URLSearchParams(Object.entries(B.finFilter).filter(([, v]) => v)).toString();
+  VIEWS.finance = () => {
+    if (needLoad('expenses', async () => { await bizMeta(); if (!B.pocs) B.pocs = await api('/poc'); B.expenses = await api('/finance/expenses?' + finQuery()); B.fin = await api('/finance/summary?' + new URLSearchParams(Object.entries({ pocId: B.finFilter.pocId, from: B.finFilter.from, to: B.finFilter.to }).filter(([, v]) => v))); })) return loadingView();
+    const M = B.meta, f = B.fin, F = B.finFilter, list = B.expenses;
+    const nat = { OPEX: 'OPEX', CAPEX: 'CAPEX', DEPOSIT: 'Deposit', LOAN: 'Loan', EQUITY: 'Equity' };
+    return `<section class="stat-grid">
+        ${kpi('Operating cost', myr(f.operatingCostMYR), 'approved OPEX')}${kpi('CAPEX', myr(f.capexMYR), 'not expensed at once')}
+        ${kpi('Depreciation', myr(f.depreciationMYR), f.capexWithoutUsefulLife.length ? f.capexWithoutUsefulLife.length + ' item(s) without useful life' : 'straight-line')}
+        ${kpi('Deposits', myr(f.depositsMYR), 'refundable, not a cost')}${kpi('Funding received', myr(f.fundingReceivedMYR), 'loans + equity')}
+        ${kpi('Unpaid', myr(f.unpaidMYR), 'approved, not paid')}${kpi('Awaiting approval', myr(f.pendingMYR), f.pendingCount + ' expense(s)')}
+        ${kpi('Without receipt', f.approvedWithoutEvidence, 'approved expenses')}
+        ${kpi('Cost per kg', pend(f.costPerKgMYR, myr, 'Needs verified harvest'))}${kpi('Revenue / profit', pend(f.revenueMYR, myr, 'Sales module v2.1.1'))}
+      </section>
+      <section class="panel"><div class="row filters">
+        <select id="ffPoc" aria-label="POC">${opts((B.pocs || []).map(p => [p.id, p.id + ' ' + p.name]), F.pocId, 'All POCs')}</select>
+        <select id="ffNature" aria-label="Type">${opts(Object.entries(nat), F.nature, 'All types')}</select>
+        <select id="ffStatus" aria-label="Status">${opts([['pending', 'Awaiting approval'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['void', 'Voided']], F.status, 'Any status')}</select>
+        <input type="date" id="ffFrom" value="${esc(F.from || '')}" aria-label="From"><input type="date" id="ffTo" value="${esc(F.to || '')}" aria-label="To">
+        <input type="text" id="ffQ" value="${esc(F.q || '')}" placeholder="Search vendor, description, invoice…">
+        <button class="btn sm" id="ffGo">Apply</button><div style="flex:1"></div>
+        <a class="btn sm" href="/api/finance/expenses.csv?${esc(finQuery())}">${I('download')}CSV</a>
+        ${hasPerm('finance.write') ? `<button class="btn sm primary" id="expNew">${I('plus')}New expense</button>` : ''}</div>
+      ${list.length ? `<div class="scroll-x table-wrap"><table class="tbl"><thead><tr><th>Date</th><th>ID</th><th>Vendor / description</th><th>Category</th><th>Type</th><th style="text-align:right">Amount</th><th style="text-align:right">MYR</th><th>Status</th><th>Payment</th><th>Receipt</th></tr></thead><tbody>
+        ${list.map(e => `<tr class="click ${e.voided ? 'voided' : ''}" data-exp="${esc(e.id)}"><td>${esc(e.transactionDate)}</td><td class="small">${esc(e.id)}</td><td class="wrap"><b>${esc(e.vendor)}</b><div class="muted small">${esc(e.description)}</div></td><td class="small">${esc(e.category || DASH)}</td><td>${esc(nat[e.nature])}</td>
+          <td style="text-align:right">${e.currency !== 'MYR' ? esc(e.currency) + ' ' + fmt(e.amount, 2) : DASH}</td><td style="text-align:right"><b>${myr(e.amountMYR)}</b></td>
+          <td>${e.voided ? chip('void', 'off') : chip(e.status)}${e.selfApproved ? ' <span class="muted small" title="Approved by the person who entered it">self</span>' : ''}</td><td>${chip(e.paymentStatus)}</td><td>${e.evidenceIds.length ? chip(e.evidenceIds.length + ' file', 'ok') : chip('none', 'warn')}</td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="empty big"><b>No expenses yet</b>Record every payment with its receipt. Deposits, loans and equity contributions have their own types so they are never counted as costs.</div>'}</section>
+      <section class="panel"><div class="panel-head"><h2>How the numbers are calculated</h2></div><ul class="muted small notes">${f.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></section>`;
+  };
+  VIEWS.finance.after = () => {
+    if (B.expenses === 'loading' || B.expenses === null) return;
+    $('#ffGo')?.addEventListener('click', () => { B.finFilter = { pocId: val('#ffPoc'), nature: val('#ffNature'), status: val('#ffStatus'), from: val('#ffFrom'), to: val('#ffTo'), q: val('#ffQ') }; B.expenses = null; render(); });
+    $('#ffQ')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('#ffGo').click(); });
+    $('#expNew')?.addEventListener('click', () => expenseForm(null));
+    $$('[data-exp]').forEach(r => r.addEventListener('click', () => expenseDetail(B.expenses.find(e => e.id === r.dataset.exp))));
+  };
+  function expenseForm(e) {
+    const M = B.meta;
+    const m = openModal(`<h3>${e ? 'Edit ' + esc(e.id) : 'New expense'}</h3>
+      ${e && e.status !== 'pending' ? '<p class="notice warn">This expense is already reviewed. Changing the amount withdraws the approval. A reason is required and kept in the audit trail.</p>' : ''}
+      <div class="form-grid" style="margin-top:12px">
+        <label class="field">Transaction date<input type="date" id="xDate" value="${esc(e?.transactionDate || new Date().toISOString().slice(0, 10))}"></label>
+        <label class="field">Type<select id="xNature">${opts(Object.entries(M.natures), e?.nature || 'OPEX')}</select></label>
+        <label class="field">Category<select id="xCat">${opts(M.categories, e?.category || '', 'Choose…')}</select></label>
+        <label class="field">Vendor<input type="text" id="xVendor" maxlength="120" value="${esc(e?.vendor || '')}"></label>
+        <label class="field full">Description<input type="text" id="xDesc" maxlength="1000" value="${esc(e?.description || '')}"></label>
+        <label class="field">Amount<input type="text" inputmode="decimal" id="xAmt" value="${e ? esc(e.amount.toFixed(2)) : ''}" placeholder="0.00"></label>
+        <label class="field">Currency<select id="xCur">${opts(M.currencies, e?.currency || 'MYR')}</select></label>
+        <label class="field fx">Exchange rate to MYR<small>Actual rate from the bank statement or receipt</small><input type="text" inputmode="decimal" id="xRate" value="${esc(e && e.currency !== 'MYR' ? e.exchangeRate : '')}"></label>
+        <label class="field fx">Rate source<input type="text" id="xRateSrc" maxlength="200" value="${esc(e && e.currency !== 'MYR' ? e.rateSource : '')}" placeholder="e.g. Maybank statement 12 Nov"></label>
+        <label class="field">Funding source<select id="xFund">${opts(Object.entries(M.funding), e?.fundingSource || 'founder_personal')}</select></label>
+        <label class="field">Paid by<input type="text" id="xPaidBy" maxlength="80" value="${esc(e?.paidBy || '')}"></label>
+        <label class="field">Payment method<select id="xPay">${opts(M.paymentMethods.map(x => [x, x.replace('_', ' ')]), e?.paymentMethod || 'bank_transfer')}</select></label>
+        <label class="field">Invoice / receipt no.<input type="text" id="xInv" maxlength="80" value="${esc(e?.invoiceRef || '')}"></label>
+        <label class="field">POC<select id="xPoc">${opts((B.pocs || []).map(p => [p.id, p.id + ' ' + p.name]), e?.pocId || B.finFilter.pocId || '', 'Not linked')}</select></label>
+        <label class="field">Crop cycle<select id="xCyc">${opts(state.cycles.map(c => [c.id, c.id + ' (' + c.pondId + ')']), e?.cycleId || '', 'Not linked')}</select></label>
+        <label class="field capex">Useful life (months)<small>For depreciation. Leave empty if unknown.</small><input type="number" min="1" max="600" id="xLife" value="${esc(e?.usefulLifeMonths ?? '')}"></label>
+        <label class="field capex">In service from<input type="date" id="xInSvc" value="${esc(e?.inServiceDate || '')}"></label>
+        ${e ? '' : '<div class="row full"><label class="switch"><input type="checkbox" id="xPaid" checked><span></span></label><span>Already paid</span></div>'}
+        <label class="field full">Notes<textarea id="xNotes" maxlength="2000">${esc(e?.notes || '')}</textarea></label>
+        ${e && e.status !== 'pending' ? '<label class="field full">Reason for change (required)<input type="text" id="xReason" maxlength="500"></label>' : ''}
+      </div>
+      <div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn primary" id="xSave">${e ? 'Save changes' : 'Record expense'}</button></div>`, { wide: true });
+    const sync = () => { const fx = val('#xCur') !== 'MYR', cap = val('#xNature') === 'CAPEX'; m.querySelectorAll('.fx').forEach(x => { x.style.display = fx ? '' : 'none'; }); m.querySelectorAll('.capex').forEach(x => { x.style.display = cap ? '' : 'none'; }); };
+    sync(); $('#xCur').onchange = sync; $('#xNature').onchange = sync;
+    m.querySelector('[data-x]').onclick = closeModal;
+    const send = async confirmDuplicate => {
+      const body = { transactionDate: val('#xDate'), nature: val('#xNature'), category: val('#xCat'), vendor: val('#xVendor'), description: val('#xDesc'), amount: val('#xAmt'), currency: val('#xCur'),
+        exchangeRate: val('#xRate'), rateSource: val('#xRateSrc'), fundingSource: val('#xFund'), paidBy: val('#xPaidBy'), paymentMethod: val('#xPay'), invoiceRef: val('#xInv'),
+        pocId: val('#xPoc'), cycleId: val('#xCyc'), usefulLifeMonths: val('#xLife'), inServiceDate: val('#xInSvc'), notes: val('#xNotes'), confirmDuplicate };
+      if (!e) body.paid = $('#xPaid').checked;
+      if ($('#xReason')) body.reason = val('#xReason');
+      try {
+        const r = await api(e ? '/finance/expenses/' + e.id : '/finance/expenses', { method: e ? 'PUT' : 'POST', body });
+        closeModal(); toast(e ? 'Saved' : `${r.id} recorded. Attach the receipt next.`, 'ok'); B.expenses = null; render();
+      } catch (err) {
+        if (err.status === 409 && err.data?.duplicates) {
+          const ok = await confirmDialog('Possible duplicate', 'Already recorded: ' + err.data.duplicates.map(d => `${d.id} ${d.transactionDate} ${d.vendor} ${d.currency} ${d.amount}${d.invoiceRef ? ' (' + d.invoiceRef + ')' : ''}`).join('; ') + '. Record this one anyway?', 'Record anyway', false);
+          if (ok) { openModal('<div class="empty">Saving…</div>'); return send(true); }
+        } else toast(err.message, 'err');
+      }
+    };
+    $('#xSave').onclick = () => send(false);
+  }
+  function expenseDetail(e) {
+    const canW = hasPerm('finance.write'), canA = hasPerm('finance.approve');
+    const ev = (B.evidenceAll || []).filter(v => e.evidenceIds.includes(v.id));
+    const m = openModal(`<h3>${esc(e.id)} ${e.voided ? chip('void', 'off') : chip(e.status)} ${chip(e.paymentStatus)}</h3>
+      <div class="kv-list" style="margin-top:12px">
+        <div class="kv-row"><span>Vendor</span><div>${esc(e.vendor)}</div></div><div class="kv-row"><span>Description</span><div>${esc(e.description)}</div></div>
+        <div class="kv-row"><span>Amount</span><div>${esc(e.currency)} ${fmt(e.amount, 2)}${e.currency !== 'MYR' ? ` × ${esc(e.exchangeRate)} (${esc(e.rateSource)})` : ''} = <b>${myr(e.amountMYR)}</b></div></div>
+        <div class="kv-row"><span>Type / category</span><div>${esc(B.meta.natures[e.nature])}${e.category ? ' · ' + esc(e.category) : ''}</div></div>
+        <div class="kv-row"><span>Funding / paid by</span><div>${esc(B.meta.funding[e.fundingSource])}${e.paidBy ? ' · ' + esc(e.paidBy) : ''} · ${esc(e.paymentMethod.replace('_', ' '))}${e.paidDate ? ' · paid ' + esc(e.paidDate) : ''}</div></div>
+        <div class="kv-row"><span>Linked to</span><div>${[e.pocId, e.cycleId, e.pondId].filter(Boolean).map(esc).join(' · ') || DASH}</div></div>
+        <div class="kv-row"><span>Invoice no.</span><div>${esc(e.invoiceRef || DASH)}</div></div>
+        ${e.nature === 'CAPEX' ? `<div class="kv-row"><span>Depreciation</span><div>${e.usefulLifeMonths ? e.usefulLifeMonths + ' months from ' + esc(e.inServiceDate) : '<span class="pending">No useful life set: not depreciated</span>'}</div></div>` : ''}
+        <div class="kv-row"><span>Recorded</span><div>${esc(e.createdBy)} · ${dateTime(e.createdAt)}${e.approvedBy ? ` · ${e.status} by ${esc(e.approvedBy)}${e.selfApproved ? ' (self-approved)' : ''}` : ''}</div></div>
+        ${e.voided ? `<div class="kv-row"><span>Voided</span><div>${esc(e.voidedBy)} · ${esc(e.voidReason)}</div></div>` : ''}
+        <div class="kv-row"><span>Evidence</span><div>${e.evidenceIds.length ? e.evidenceIds.map(id => `<a href="/api/evidence/${encodeURIComponent(id)}/file">${esc(id)}</a>`).join(', ') : '<span class="pending">No receipt attached</span>'}</div></div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start">
+        ${!e.voided && hasPerm('evidence.write') ? `<button class="btn sm primary" id="edAttach">${I('plus')}Attach receipt</button>` : ''}
+        ${!e.voided && canA && e.status === 'pending' ? '<button class="btn sm" id="edApprove">Approve</button><button class="btn sm danger" id="edReject">Reject</button>' : ''}
+        ${!e.voided && canW ? `<button class="btn sm" id="edPay">${e.paymentStatus === 'paid' ? 'Mark unpaid' : 'Mark paid'}</button><button class="btn sm" id="edEdit">${I('edit')}Edit</button><button class="btn sm ghost danger" id="edVoid">Void</button>` : ''}
+        <button class="btn sm ghost" id="edHist">History</button><div style="flex:1"></div><button class="btn sm" data-x>Close</button></div>`, { wide: true });
+    m.querySelector('[data-x]').onclick = closeModal;
+    const act = async (path, body, msg) => { try { await api(`/finance/expenses/${e.id}/${path}`, { method: 'POST', body: body || {} }); closeModal(); toast(msg, 'ok'); B.expenses = null; render(); } catch (err) { toast(err.message, 'err'); } };
+    $('#edApprove')?.addEventListener('click', () => act('approve', {}, 'Approved'));
+    $('#edReject')?.addEventListener('click', () => act('reject', {}, 'Rejected'));
+    $('#edPay')?.addEventListener('click', () => act('payment', { paid: e.paymentStatus !== 'paid' }, 'Payment status updated'));
+    $('#edEdit')?.addEventListener('click', () => expenseForm(e));
+    $('#edAttach')?.addEventListener('click', () => evidenceUpload({ links: [{ type: 'expense', id: e.id }].concat(e.pocId ? [{ type: 'poc', id: e.pocId }] : []), type: 'receipt', title: `${e.vendor} ${e.invoiceRef || e.id}` }));
+    $('#edVoid')?.addEventListener('click', () => {
+      const mm = openModal(`<h3>Void ${esc(e.id)}</h3><p class="muted small">The record stays visible as voided. It no longer counts in totals.</p><label class="field">Reason (required)<input type="text" id="vdR" maxlength="500"></label><div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn danger" id="vdGo">Void expense</button></div>`);
+      mm.querySelector('[data-x]').onclick = closeModal;
+      $('#vdGo').onclick = () => act('void', { reason: val('#vdR') }, 'Voided');
+    });
+    $('#edHist')?.addEventListener('click', () => auditModal('expense', e.id));
+  }
+
+  // ------------------------------------------------------------------ Evidence vault
+  const evQuery = () => new URLSearchParams(Object.entries(B.evFilter).filter(([, v]) => v)).toString();
+  const size = n => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+  VIEWS.evidence = () => {
+    if (needLoad('evidence', async () => { await bizMeta(); B.evidence = await api('/evidence?' + evQuery()); })) return loadingView();
+    const T = B.meta.evidenceTypes, F = B.evFilter, list = B.evidence;
+    return `<section class="row"><p class="muted" style="margin:0;max-width:80ch">Receipts, photos, test results and agreements for due diligence. Each file keeps its SHA-256 fingerprint: AQUA can show a stored file has not changed since upload, but a fingerprint alone does not prove the document itself is genuine.</p></section>
+      <section class="panel"><div class="row filters">
+        <select id="efType">${opts(Object.entries(T).map(([k, v]) => [k, v.label]), F.type, 'All types')}</select>
+        <select id="efVer">${opts([['unverified', 'Unverified'], ['verified', 'Verified'], ['rejected', 'Rejected']], F.verification, 'Any verification')}</select>
+        <input type="text" id="efQ" value="${esc(F.q || '')}" placeholder="Search title, file name, ID…">
+        <label class="row" style="flex-wrap:nowrap;gap:6px"><input type="checkbox" id="efArch" ${F.archived ? 'checked' : ''}> <span class="small">Show archived</span></label>
+        ${F.linkId ? `<span class="chip info">Linked to ${esc(F.linkType)} ${esc(F.linkId)}</span>` : ''}
+        <button class="btn sm" id="efGo">Apply</button><div style="flex:1"></div>
+        <a class="btn sm" href="/api/evidence/index.csv">${I('download')}Evidence index</a>
+        ${hasPerm('evidence.write') ? `<button class="btn sm primary" id="evNew">${I('plus')}Upload</button>` : ''}</div>
+      ${list.length ? `<div class="scroll-x table-wrap"><table class="tbl"><thead><tr><th>ID</th><th>Title</th><th>Type</th><th>File</th><th>SHA-256</th><th>Verification</th><th>Uploaded</th><th>Links</th><th></th></tr></thead><tbody>
+        ${list.map(v => `<tr class="${v.archived ? 'voided' : ''}"><td class="small">${esc(v.id)}${v.confidential ? ' ' + I('lock', 'ico-inline') : ''}</td><td class="wrap"><b>${esc(v.title)}</b>${v.description ? `<div class="muted small">${esc(v.description)}</div>` : ''}${v.sameContentAs ? `<div class="pending small">Same file as ${esc(v.sameContentAs)}</div>` : ''}</td>
+          <td class="small">${esc(T[v.type]?.label || v.type)}</td><td class="small">v${v.current.v} · ${esc(v.current.mime.split('/')[1])} · ${size(v.current.size)}</td><td class="mono small" title="${esc(v.current.sha256)}">${esc(v.current.sha256.slice(0, 12))}…</td>
+          <td>${chip(v.verification)}${v.reviewer ? `<div class="muted small">${esc(v.reviewer)}</div>` : ''}</td><td class="small">${esc(v.uploadedBy)}<div class="muted">${dateTime(v.uploadedAt)}</div></td>
+          <td class="small">${v.links.map(l => esc(l.type + ' ' + l.id)).join('<br>') || DASH}</td>
+          <td><div class="row" style="flex-wrap:nowrap;gap:6px"><a class="btn sm" href="/api/evidence/${encodeURIComponent(v.id)}/file" title="Download">${I('download')}</a><button class="btn sm ghost" data-evd="${esc(v.id)}">More</button></div></td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="empty big"><b>No evidence yet</b>Upload the PL purchase receipt, pond photos, water test sheets and calibration records as you go. Missing evidence lowers the POC completeness score.</div>'}</section>`;
+  };
+  VIEWS.evidence.after = () => {
+    if (!Array.isArray(B.evidence)) return;
+    B.evidenceAll = B.evidence;
+    $('#efGo')?.addEventListener('click', () => { B.evFilter = { ...B.evFilter, type: val('#efType'), verification: val('#efVer'), q: val('#efQ'), archived: $('#efArch').checked ? '1' : '' }; B.evidence = null; render(); });
+    $('#evNew')?.addEventListener('click', () => evidenceUpload({}));
+    $$('[data-evd]').forEach(b => b.addEventListener('click', () => evidenceDetail(B.evidence.find(v => v.id === b.dataset.evd))));
+  };
+  function evidenceUpload(pre, versionOf) {
+    const T = B.meta?.evidenceTypes || {};
+    const linkOpts = [...(B.pocs || []).map(p => ['poc:' + p.id, 'POC ' + p.id + ' ' + p.name]), ...state.cycles.map(c => ['cycle:' + c.id, 'Cycle ' + c.id]), ...(Array.isArray(B.expenses) ? B.expenses : []).slice(0, 200).map(e => ['expense:' + e.id, 'Expense ' + e.id + ' ' + e.vendor])];
+    const preLinks = (pre.links || []).map(l => l.type + ':' + l.id);
+    const m = openModal(`<h3>${versionOf ? 'New version of ' + esc(versionOf.id) : 'Upload evidence'}</h3>
+      <p class="muted small">PDF, JPG, PNG, WEBP, HEIC, MP4, MOV, CSV, TXT, XLSX or DOCX, up to ${B.meta?.maxFileMB || 50} MB. The file type is checked from its content, not its name.</p>
+      <div class="form-grid" style="margin-top:12px">
+        <label class="field full">File<input type="file" id="upFile" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.mp4,.mov,.csv,.txt,.xlsx,.docx"></label>
+        ${versionOf ? '<label class="field full">What changed<input type="text" id="upNote" maxlength="500"></label>' : `
+        <label class="field">Type<select id="upType">${opts(Object.entries(T).map(([k, v]) => [k, v.label]), pre.type || 'receipt')}</select></label>
+        <label class="field">Title<input type="text" id="upTitle" maxlength="160" value="${esc(pre.title || '')}"></label>
+        <label class="field">Original date / time<small>When the photo was taken or the document dated (as stated)</small><input type="datetime-local" id="upOrig"></label>
+        <label class="field">Link to<select id="upLink" multiple size="4">${linkOpts.map(([v, l]) => `<option value="${esc(v)}" ${preLinks.includes(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+        <label class="field full">Description<textarea id="upDesc" maxlength="2000"></textarea></label>
+        <div class="row full"><label class="switch"><input type="checkbox" id="upConf"><span></span></label><span>Confidential (finance and admin roles only)</span></div>`}
+      </div>
+      <div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn primary" id="upGo">Upload</button></div>`, { wide: true });
+    const typeSel = $('#upType');
+    const syncConf = () => { if (typeSel) $('#upConf').checked = !!T[typeSel.value]?.confidential; };
+    syncConf(); typeSel?.addEventListener('change', syncConf);
+    m.querySelector('[data-x]').onclick = closeModal;
+    $('#upGo').onclick = async () => {
+      const file = $('#upFile').files[0];
+      if (!file) { toast('Choose a file', 'err'); return; }
+      if (file.size > (B.meta?.maxFileMB || 50) * 1048576) { toast('File is larger than 50 MB', 'err'); return; }
+      const meta = versionOf ? { originalName: file.name, note: val('#upNote') } : {
+        originalName: file.name, type: val('#upType'), title: val('#upTitle') || file.name, description: val('#upDesc'), confidential: $('#upConf').checked,
+        originalTimestamp: val('#upOrig') ? new Date(val('#upOrig')).toISOString() : null,
+        links: [...$('#upLink').selectedOptions].map(o => { const [type, id] = o.value.split(':'); return { type, id }; }) };
+      $('#upGo').disabled = true; $('#upGo').textContent = 'Uploading…';
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const metaB64 = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(meta))));
+        const res = await fetch(versionOf ? `/api/evidence/${encodeURIComponent(versionOf.id)}/versions` : '/api/evidence', { method: 'POST', headers: { 'X-AQUA': '1', 'Content-Type': 'application/octet-stream', 'X-Evidence-Meta': metaB64 }, body: bytes });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || 'Upload failed');
+        closeModal(); toast(`${d.id} stored · SHA-256 ${d.current.sha256.slice(0, 12)}…`, 'ok');
+        B.evidence = null; B.expenses = null; B.pocDetail = null; render();
+      } catch (e) { toast(e.message, 'err'); $('#upGo').disabled = false; $('#upGo').textContent = 'Upload'; }
+    };
+  }
+  function evidenceDetail(v) {
+    const T = B.meta.evidenceTypes;
+    const m = openModal(`<h3>${esc(v.id)} ${chip(v.verification)}${v.archived ? ' ' + chip('archived', 'off') : ''}</h3>
+      <div class="kv-list" style="margin-top:12px">
+        <div class="kv-row"><span>Title</span><div>${esc(v.title)}</div></div><div class="kv-row"><span>Type</span><div>${esc(T[v.type]?.label)}${v.confidential ? ' · confidential' : ''}</div></div>
+        <div class="kv-row"><span>Original date (as stated)</span><div>${v.originalTimestamp ? dateTime(v.originalTimestamp) : DASH}</div></div>
+        <div class="kv-row"><span>Review</span><div>${v.reviewer ? esc(v.reviewer) + ' · ' + dateTime(v.reviewedAt) + (v.reviewNote ? ' · ' + esc(v.reviewNote) : '') : 'Not reviewed'}</div></div>
+      </div>
+      <h4 style="margin:14px 0 6px">Versions</h4><div class="scroll-x"><table class="tbl"><thead><tr><th>v</th><th>File</th><th>SHA-256</th><th>Size</th><th>Uploaded</th><th></th></tr></thead><tbody>
+      ${v.versions.slice().reverse().map(x => `<tr><td>${x.v}</td><td class="small wrap">${esc(x.originalName)}</td><td class="mono small wrap">${esc(x.sha256)}</td><td class="small">${size(x.size)}</td><td class="small">${esc(x.uploadedBy)}<div class="muted">${dateTime(x.uploadedAt)}</div></td><td><a class="btn sm" href="/api/evidence/${encodeURIComponent(v.id)}/file?v=${x.v}">${I('download')}</a></td></tr>`).join('')}
+      </tbody></table></div><div id="evCheck" class="small" style="margin-top:8px"></div>
+      <div class="modal-actions" style="justify-content:flex-start">
+        <button class="btn sm" id="evChk">Check file integrity</button>
+        ${hasPerm('evidence.write') && !v.archived ? '<button class="btn sm" id="evVer">New version</button>' : ''}
+        ${hasPerm('evidence.verify') ? '<button class="btn sm primary" id="evOk">Mark verified</button><button class="btn sm danger" id="evBad">Reject</button>' : ''}
+        ${hasPerm('evidence.verify') ? `<button class="btn sm ghost" id="evArch">${v.archived ? 'Restore' : 'Archive'}</button>` : ''}
+        <button class="btn sm ghost" id="evHist">History</button><div style="flex:1"></div><button class="btn sm" data-x>Close</button></div>`, { wide: true });
+    m.querySelector('[data-x]').onclick = closeModal;
+    const done = msg => { closeModal(); toast(msg, 'ok'); B.evidence = null; render(); };
+    $('#evChk').onclick = async () => { try { const r = await api(`/evidence/${v.id}/check`); $('#evCheck').innerHTML = r.map(x => `v${x.v}: ${x.ok ? '<span class="chip ok">unchanged since upload</span>' : '<span class="chip crit">' + esc(x.problem || 'content changed') + '</span>'}`).join(' '); } catch (e) { toast(e.message, 'err'); } };
+    $('#evVer')?.addEventListener('click', () => evidenceUpload({}, v));
+    const review = status => {
+      const mm = openModal(`<h3>${status === 'verified' ? 'Mark verified' : 'Reject evidence'}</h3><p class="muted small">Say what you checked, for example "matches bank statement 12 Nov".</p><label class="field">Note<input type="text" id="rvN" maxlength="1000"></label><div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn primary" id="rvG">Save</button></div>`);
+      mm.querySelector('[data-x]').onclick = closeModal;
+      $('#rvG').onclick = async () => { try { await api(`/evidence/${v.id}/verify`, { method: 'POST', body: { status, note: val('#rvN') } }); done('Saved'); } catch (e) { toast(e.message, 'err'); } };
+    };
+    $('#evOk')?.addEventListener('click', () => review('verified'));
+    $('#evBad')?.addEventListener('click', () => review('rejected'));
+    $('#evArch')?.addEventListener('click', async () => {
+      if (v.archived) { try { await api(`/evidence/${v.id}/restore`, { method: 'POST', body: {} }); done('Restored'); } catch (e) { toast(e.message, 'err'); } return; }
+      const mm = openModal(`<h3>Archive ${esc(v.id)}</h3><p class="muted small">Archived evidence is hidden from lists but never deleted.</p><label class="field">Reason (required)<input type="text" id="arR" maxlength="500"></label><div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn danger" id="arG">Archive</button></div>`);
+      mm.querySelector('[data-x]').onclick = closeModal;
+      $('#arG').onclick = async () => { try { await api(`/evidence/${v.id}/archive`, { method: 'POST', body: { reason: val('#arR') } }); done('Archived'); } catch (e) { toast(e.message, 'err'); } };
+    });
+    $('#evHist')?.addEventListener('click', () => auditModal('evidence', v.id));
+  }
+
+  // ------------------------------------------------------------------ Audit log
+  function diffText(b, a) {
+    if (!b || !a || typeof b !== 'object' || typeof a !== 'object') return '';
+    const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])].filter(k => !['updatedAt', 'updatedBy'].includes(k) && JSON.stringify(b[k]) !== JSON.stringify(a[k]));
+    return keys.slice(0, 6).map(k => `${k}: ${JSON.stringify(b[k] ?? null).slice(0, 60)} → ${JSON.stringify(a[k] ?? null).slice(0, 60)}`).join('; ');
+  }
+  const auditRows = list => list.map(r => `<tr><td class="small">${dateTime(r.ts)}<div class="muted">#${r.seq}</div></td><td class="small">${esc(r.actor)}<div class="muted">${esc(r.role || '')}</div></td><td class="small"><b>${esc(r.action)}</b></td>
+    <td class="small">${esc([r.entity, r.entityId].filter(Boolean).join(' '))}</td><td class="small wrap">${esc(r.reason || '')}${r.before && r.after ? `<div class="muted mono">${esc(diffText(r.before, r.after))}</div>` : ''}</td></tr>`).join('');
+  async function auditModal(entity, id) {
+    if (!hasPerm('audit.read')) { toast('Your role cannot read the audit log', 'err'); return; }
+    try {
+      const list = await api(`/audit?entity=${entity}&entityId=${encodeURIComponent(id)}`);
+      const m = openModal(`<h3>History of ${esc(id)}</h3><div class="scroll-x" style="margin-top:12px"><table class="tbl"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Reason / change</th></tr></thead><tbody>${auditRows(list)}</tbody></table></div><div class="modal-actions"><button class="btn" data-x>Close</button></div>`, { wide: true });
+      m.querySelector('[data-x]').onclick = closeModal;
+    } catch (e) { toast(e.message, 'err'); }
+  }
+  VIEWS.audit = () => {
+    const F = B.auditFilter;
+    if (needLoad('audit', async () => { B.audit = await api('/audit?' + new URLSearchParams(Object.entries({ ...F, limit: 300 }).filter(([, v]) => v))); })) return loadingView();
+    return `<section class="panel"><div class="row filters">
+        <select id="afEnt">${opts([['expense', 'Expenses'], ['poc', 'POCs'], ['evidence', 'Evidence'], ['user', 'Users'], ['monitoring', 'Monitoring & settings']], F.entity, 'Everything')}</select>
+        <input type="text" id="afActor" value="${esc(F.actor || '')}" placeholder="User"><input type="text" id="afAct" value="${esc(F.action || '')}" placeholder="Action, e.g. expense. or auth.">
+        <button class="btn sm" id="afGo">Apply</button><div style="flex:1"></div><span id="afVer"></span><button class="btn sm" id="afCheck">Verify audit chain</button></div>
+      <p class="muted small">Each entry stores the fingerprint of the previous one, so a changed or deleted line is detected. This shows tampering; it does not prevent someone with server access from rewriting the whole file, which is why off-site backups matter.</p>
+      ${B.audit.length ? `<div class="scroll-x table-wrap"><table class="tbl"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Reason / change</th></tr></thead><tbody>${auditRows(B.audit)}</tbody></table></div>` : '<div class="empty">No entries match.</div>'}</section>`;
+  };
+  VIEWS.audit.after = () => {
+    $('#afGo')?.addEventListener('click', () => { B.auditFilter = { entity: val('#afEnt'), actor: val('#afActor'), action: val('#afAct') }; B.audit = null; render(); });
+    $('#afCheck')?.addEventListener('click', async () => { try { const r = await api('/audit/verify'); $('#afVer').innerHTML = r.ok ? `<span class="chip ok">Chain intact · ${r.count} entries</span>` : `<span class="chip crit">${esc(r.problem)}</span>`; } catch (e) { toast(e.message, 'err'); } });
+  };
+
+  // ------------------------------------------------------------------ Investor center (placeholder until v2.1.2)
+  VIEWS.investor = () => `<section class="panel"><div class="empty big"><b>Investor center</b>You are signed in as an investor viewer. Reports that the founder publishes for you will appear here. Publishing, reports and PDF export arrive in version 2.1.2. Until then this account cannot see farm, finance or evidence data.</div></section>`;
+
+  // ------------------------------------------------------------------ users (founder) + account panel
+  function usersPanel() {
+    if (!hasPerm('users.manage')) return '';
+    if (needLoad('users', async () => { B.users = await api('/users'); })) return '<section class="panel"><div class="empty">Loading users…</div></section>';
+    const R = B.users.roles;
+    return `<section class="panel"><div class="panel-head"><h2>Users and roles</h2><div class="spacer"></div><button class="btn sm primary" id="usNew">${I('plus')}Add user</button></div>
+      <div class="scroll-x"><table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Sessions</th><th></th></tr></thead><tbody>
+      ${B.users.users.map(u => `<tr><td><b>${esc(u.username)}</b>${u.username === state.auth.username ? ' <span class="muted small">(you)</span>' : ''}</td>
+        <td><select data-urole="${esc(u.username)}" ${u.username === state.auth.username ? 'disabled' : ''}>${opts(Object.entries(R).map(([k, v]) => [k, v.label]), u.role)}</select></td>
+        <td>${u.disabled ? chip('disabled', 'crit') : chip('active', 'ok')}</td><td class="small">${u.lastLoginAt ? rel(u.lastLoginAt) : 'never'}</td><td class="small">${u.activeSessions}</td>
+        <td><div class="row" style="flex-wrap:nowrap;gap:6px">${u.username === state.auth.username ? '' : `<button class="btn sm ghost" data-ureset="${esc(u.username)}">Reset password</button><button class="btn sm ghost ${u.disabled ? '' : 'danger'}" data-udis="${esc(u.username)}" data-v="${u.disabled ? '0' : '1'}">${u.disabled ? 'Enable' : 'Disable'}</button>`}</div></td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="muted small" style="margin-bottom:0">Roles are checked by the server on every request. Technical advisors and operators have no finance access; investor viewers see nothing until reports are published to them (v2.1.2). Changing a role signs that user out.</p></section>`;
+  }
+  function usersAfter() {
+    if (!Array.isArray(B.users?.users)) return;
+    const showTemp = (u, pw) => { const m = openModal(`<h3>Temporary password for ${esc(u)}</h3><p class="notice warn" style="margin:12px 0">Shown only once. Give it to the person privately; they should change it under Settings → Account.</p><pre class="code-box">${esc(pw)}</pre><div class="modal-actions"><button class="btn primary" data-x>Done</button></div>`); m.querySelector('[data-x]').onclick = closeModal; };
+    $('#usNew')?.addEventListener('click', () => {
+      const m = openModal(`<h3>Add user</h3><div class="form-grid" style="margin-top:12px"><label class="field">Username<input type="text" id="unName" maxlength="32" autocapitalize="none"></label>
+        <label class="field">Role<select id="unRole">${opts(Object.entries(B.users.roles).filter(([k]) => k !== 'founder').map(([k, v]) => [k, v.label]), 'operator')}</select></label></div>
+        <div class="modal-actions"><button class="btn" data-x>Cancel</button><button class="btn primary" id="unGo">Create user</button></div>`);
+      m.querySelector('[data-x]').onclick = closeModal;
+      $('#unGo').onclick = async () => { try { const r = await api('/users', { method: 'POST', body: { username: val('#unName'), role: val('#unRole') } }); B.users = null; showTemp(r.user.username, r.tempPassword); render(); } catch (e) { toast(e.message, 'err'); } };
+    });
+    $$('[data-urole]').forEach(sel => sel.addEventListener('change', async () => { try { await api('/users/' + encodeURIComponent(sel.dataset.urole), { method: 'PUT', body: { role: sel.value } }); toast('Role changed; that user was signed out', 'ok'); B.users = null; render(); } catch (e) { toast(e.message, 'err'); B.users = null; render(); } }));
+    $$('[data-udis]').forEach(b => b.addEventListener('click', async () => { try { await api('/users/' + encodeURIComponent(b.dataset.udis), { method: 'PUT', body: { disabled: b.dataset.v === '1' } }); B.users = null; render(); } catch (e) { toast(e.message, 'err'); } }));
+    $$('[data-ureset]').forEach(b => b.addEventListener('click', async () => { if (!await confirmDialog('Reset password?', 'The user is signed out and gets a new temporary password.', 'Reset', false)) return; try { const r = await api(`/users/${encodeURIComponent(b.dataset.ureset)}/reset-password`, { method: 'POST' }); showTemp(b.dataset.ureset, r.tempPassword); } catch (e) { toast(e.message, 'err'); } }));
+  }
+  function localAccountPanel() {
+    return `<section class="panel"><div class="panel-head"><h2>Account</h2><div class="spacer"></div><span class="chip ok">Signed in as ${esc(state.auth?.username)} · ${esc(state.auth?.roleLabel || '')}</span></div>
+      <div class="form-grid"><label class="field">Current password<input type="password" id="pwCur" autocomplete="current-password"></label>
+      <label class="field">New password<small>At least 12 characters with letters and numbers</small><input type="password" id="pwNew" autocomplete="new-password"></label></div>
+      <div class="modal-actions" style="justify-content:flex-start"><button class="btn primary" id="pwSave2">Change password</button><button class="btn ghost" id="logout2">Sign out</button></div></section>`;
+  }
+  function localAccountAfter() {
+    $('#pwSave2')?.addEventListener('click', async () => { try { await api('/auth/password', { method: 'POST', body: { current: $('#pwCur').value, password: $('#pwNew').value } }); toast('Password changed. Other devices are signed out.', 'ok'); } catch (e) { toast(e.message, 'err'); } });
+    $('#logout2')?.addEventListener('click', signOut);
+  }
+
   // ------------------------------------------------------------ render
   const SUBS = {
     overview: () => state.info?.site?.name || '',
@@ -1451,6 +1929,11 @@
     alerts: () => activeAlerts().length + ' active',
     calibration: () => 'pH probe calibration',
     water: () => 'Test-kit results and limits',
+    poc: () => 'Trials with fixed success criteria',
+    finance: () => 'Expense ledger, approvals and cost per kg',
+    evidence: () => 'Receipts, photos and agreements with SHA-256',
+    audit: () => 'Who changed what, when and why',
+    investor: () => 'Read-only access',
     cycle: () => 'Stocking to harvest',
     settings: () => 'Server ' + (state.info?.hostname || '')
   };
@@ -1571,32 +2054,50 @@
   });
 
   // ------------------------------------------------------------ login (cloud mode)
+  async function refreshAuth() {
+    try { state.auth = await (await fetch('/api/auth/status', { cache: 'no-store' })).json(); }
+    catch (_) { state.auth = state.auth || { required: false, loggedIn: true, perms: [] }; }
+  }
+  async function afterSignIn() {
+    document.body.classList.remove('locked');
+    await refreshAuth();
+    state.creds = null; state.history = {}; Object.assign(state.biz, { pocs: null, expenses: null, evidence: null, users: null, audit: null });
+    await loadAll(); render();
+    if (hasPerm('monitor.read')) connectWs();
+  }
+  async function signOut() {
+    try { await api('/auth/logout', { method: 'POST' }); } catch (_) {}
+    await refreshAuth();
+    if (state.auth.required) showLogin('Signed out.'); else { location.hash = '#/overview'; render(); toast('Signed out', 'ok'); }
+  }
   function showLogin(msg) {
     document.body.classList.add('locked');
     closeModal();
     if (state.ws) { const w = state.ws; state.ws = null; try { w.close(); } catch (_) {} }
     $('#pageTitle').textContent = 'Sign in'; $('#pageSub').textContent = ''; $('#pondPicker').innerHTML = '';
+    const setup = state.auth?.needsSetup && state.auth?.canSetup;
+    const back = !state.auth?.required ? '<button class="btn ghost" type="button" id="lgBack">Back to monitoring</button>' : '';
     $('#view').innerHTML = `<section class="panel login-card">
       <div class="login-brand"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#logo"/></svg><div><b>SMARTFUZE</b><span>AQUA</span></div></div>
-      ${msg ? `<p class="muted small" style="margin:0 0 6px">${esc(msg)}</p>` : ''}
+      ${setup ? '<h3 style="margin:0 0 6px">Create the founder account</h3><p class="muted small" style="margin:0 0 10px">No account exists yet. This first account owns all business records and manages other users. It can only be created on this computer.</p>'
+              : msg ? `<p class="muted small" style="margin:0 0 6px">${esc(msg)}</p>` : ''}
       <form id="loginForm" class="grid" style="gap:14px">
-        <label class="field">Username<input type="text" id="lgUser" value="admin" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
-        <label class="field">Password<input type="password" id="lgPass" autocomplete="current-password"></label>
-        <button class="btn primary" type="submit" id="lgGo">Sign in</button>
-        <p class="muted small" style="margin:0">This device stays signed in for 90 days.</p>
+        <label class="field">Username<input type="text" id="lgUser" value="${setup ? '' : 'admin'}" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+        <label class="field">Password${setup ? '<small>At least 12 characters with letters and numbers</small>' : ''}<input type="password" id="lgPass" autocomplete="${setup ? 'new-password' : 'current-password'}"></label>
+        <button class="btn primary" type="submit" id="lgGo">${setup ? 'Create founder account' : 'Sign in'}</button>
+        ${back}
+        <p class="muted small" style="margin:0">Sessions last 7 to 30 days depending on the role. Finance roles sign in again every 14 days.</p>
       </form></section>`;
-    setTimeout(() => $('#lgPass')?.focus(), 50);
+    setTimeout(() => (setup ? $('#lgUser') : $('#lgPass'))?.focus(), 50);
+    $('#lgBack')?.addEventListener('click', () => { document.body.classList.remove('locked'); location.hash = '#/overview'; render(); });
     $('#loginForm').addEventListener('submit', async e => {
       e.preventDefault();
       $('#lgGo').disabled = true;
       try {
-        const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: $('#lgUser').value.trim(), password: $('#lgPass').value }) });
+        const r = await fetch(setup ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: $('#lgUser').value.trim(), password: $('#lgPass').value }) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || 'Sign-in failed');
-        document.body.classList.remove('locked');
-        state.auth = { ...state.auth, required: true, loggedIn: true, username: d.username };
-        state.creds = null; state.history = {};
-        await loadAll(); render(); connectWs();
+        await afterSignIn();
       } catch (err) { toast(err.message, 'err'); $('#lgGo').disabled = false; }
     });
   }
@@ -1604,12 +2105,11 @@
   // ------------------------------------------------------------ boot
   (async () => {
     $('#view').innerHTML = `<div class="empty big"><b>Loading</b>Connecting to the AQUA server…</div>`;
-    try { state.auth = await (await fetch('/api/auth/status', { cache: 'no-store' })).json(); }
-    catch (_) { state.auth = { required: false, loggedIn: true }; }
+    await refreshAuth();
     if (state.auth.required && !state.auth.loggedIn) { showLogin(); return; }
     await loadAll();
     render();
-    connectWs();
+    if (hasPerm('monitor.read')) connectWs();
   })();
   setInterval(() => { if (state.wsOk) load.info().catch(() => {}); }, 60000);
 

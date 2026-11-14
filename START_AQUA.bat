@@ -1,12 +1,12 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title SMARTFUZE AQUA v2.0.3
+title SMARTFUZE AQUA v2.1.0
 color 0B
 
 echo.
 echo   ==================================================
-echo     SMARTFUZE AQUA  v2.0.3
+echo     SMARTFUZE AQUA  v2.1.0
 echo     Shrimp pond monitoring - real ESP32 data only
 echo   ==================================================
 echo.

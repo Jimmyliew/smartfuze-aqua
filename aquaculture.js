@@ -44,8 +44,12 @@ function classify(v, lim) {
 const DAY = 86400000;
 const dayMs = s => Date.parse(s + 'T00:00:00');
 
-/** Production cycle summary. Survival / biomass / FCR before harvest are ESTIMATES:
- *  counted mortality is always lower than real mortality (shrimp are eaten / decompose). */
+/** Production cycle summary.
+ *  Before the cycle is closed, survival / biomass / FCR are ESTIMATES (counted mortality is always
+ *  lower than real mortality). "Verified" survival and final FCR exist only after the cycle is closed
+ *  with harvest records. Partial harvests are subtracted from the shrimp still in the tank; a partial
+ *  harvest without a count makes the remaining population unknown instead of guessed.
+ *  One stocking event per cycle is supported (multiple stockings: start a new cycle). */
 function cycleSummary(c, volumeM3, now = Date.now()) {
   const recs = c.records || [];
   const start = dayMs(c.startDate);
@@ -57,30 +61,38 @@ function cycleSummary(c, volumeM3, now = Date.now()) {
   const samples = recs.filter(r => r.type === 'sample' && isNum(r.avgWeightG)).sort((a, b) => a.date.localeCompare(b.date));
   const last = samples.at(-1), prev = samples.at(-2);
   const harvest = recs.filter(r => r.type === 'harvest');
-  const harvestKg = harvest.length ? round(harvest.reduce((a, r) => a + (r.kg || 0), 0), 2) : null;
-  const harvestCount = harvest.some(r => isNum(r.count)) ? harvest.reduce((a, r) => a + (r.count || 0), 0) : null;
+  const harvestKg = harvest.length ? round(harvest.reduce((a, r) => a + (isNum(r.kg) ? r.kg : 0), 0), 2) : null;
+  const harvestCountKnown = harvest.length > 0 && harvest.every(r => isNum(r.count));
+  const harvestCount = harvestCountKnown ? harvest.reduce((a, r) => a + r.count, 0) : null;
+  const closed = c.status === 'closed';
   const stocked = isNum(c.stockedCount) ? c.stockedCount : null;
   const w0 = isNum(c.initialWeightG) ? c.initialWeightG : 0;
-  const aliveEst = stocked !== null ? Math.max(0, stocked - mortality) : null;
-  const abw = last ? last.avgWeightG : null;
-  const biomassEstKg = aliveEst !== null && abw !== null ? round(aliveEst * abw / 1000, 1) : null;
   const initialKg = stocked !== null ? stocked * w0 / 1000 : 0;
-  const gainKg = biomassEstKg !== null ? biomassEstKg - initialKg : null;
-  const out = {
-    doc, mortality, feedKg, stocked, aliveEst,
-    survivalEstPct: stocked ? round(aliveEst / stocked * 100, 1) : null,
+  // shrimp believed to be still in the tank
+  let aliveEst = null, remainingUnknown = false;
+  if (stocked !== null) {
+    if (harvest.length && !harvestCountKnown) remainingUnknown = true;
+    else aliveEst = Math.max(0, stocked - mortality - (harvestCount || 0));
+  }
+  const abw = last ? last.avgWeightG : null;
+  const biomassEstKg = !closed && aliveEst !== null && abw !== null ? round(aliveEst * abw / 1000, 1) : null;
+  const producedKg = (biomassEstKg || 0) + (harvestKg || 0);
+  const gainKg = producedKg > 0 ? producedKg - initialKg : null;
+  return {
+    doc, mortality, feedKg, stocked, aliveEst, remainingUnknown,
+    survivalEstPct: stocked && aliveEst !== null ? round((aliveEst + (harvestCount || 0)) / stocked * 100, 1) : null,
     abwG: abw, lastSampleDate: last ? last.date : null,
     biomassEstKg,
-    fcrEst: gainKg > 0 && feedKg > 0 ? round(feedKg / gainKg, 2) : null,
+    fcrEst: !closed && gainKg > 0 && feedKg > 0 && !remainingUnknown ? round(feedKg / gainKg, 2) : null,
     adgG: last ? round((abw - w0) / Math.max(1, (dayMs(last.date) - start) / DAY), 3) : null,
     weeklyGainG: last && prev ? round((last.avgWeightG - prev.avgWeightG) / Math.max(1, (dayMs(last.date) - dayMs(prev.date)) / DAY) * 7, 2) : null,
     densityPerM3: isNum(volumeM3) && volumeM3 > 0 && aliveEst !== null ? Math.round(aliveEst / volumeM3) : null,
     biomassKgPerM3: isNum(volumeM3) && volumeM3 > 0 && biomassEstKg !== null ? round(biomassEstKg / volumeM3, 2) : null,
-    harvestKg, harvestCount,
-    survivalPct: stocked && isNum(harvestCount) ? round(harvestCount / stocked * 100, 1) : null,
-    fcr: harvestKg && feedKg ? round(feedKg / Math.max(0.001, harvestKg - initialKg), 2) : null
+    harvestKg, harvestCount, partialHarvest: harvest.length > 0 && !closed,
+    // verified only when the cycle is closed and the harvest was counted / weighed
+    survivalPct: closed && stocked && harvestCountKnown ? round(harvestCount / stocked * 100, 1) : null,
+    fcr: closed && harvestKg && feedKg && harvestKg > initialKg ? round(feedKg / (harvestKg - initialKg), 2) : null
   };
-  return out;
 }
 
 module.exports = { nh3Fraction, nh3n, bicarbDoseG, phTempCompensate, classify, cycleSummary, isNum, round };

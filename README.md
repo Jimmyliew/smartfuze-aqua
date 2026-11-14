@@ -1,10 +1,24 @@
-# SMARTFUZE AQUA v2.0.3
+# SMARTFUZE AQUA v2.1.0
 
 Shrimp pond monitoring with **real ESP32 data only**. This is the foundation release: real pH, real water temperature, history, online/offline status, pH calibration, a mobile app (PWA) and an Integration Hub that later versions build on.
 
 ```
 Sensors -> ESP32 -> Wi-Fi -> MQTT (port 1883) -> AQUA server -> Dashboard (port 3000) -> phone / desktop
 ```
+
+## What's new in v2.1.0 (POC, finance and evidence foundation)
+
+Full guide in Chinese: **`docs/V2.1.0_GUIDE_ZH.md`** (code review, permission matrix, upgrade, backup / rollback, POC guide, known limitations).
+
+- **Roles checked on the server for every API call**: Founder, Admin / Finance, Farm Operator, Technical Advisor, External Auditor, Investor Viewer. Unknown routes are denied. Existing v2.0.x account becomes Founder; old 90-day sessions are shortened (7 to 30 days by role).
+- **POC research**: trials with success / failure criteria locked at start (later changes need a reason and keep the old text), status flow Draft to Completed / Failed / Cancelled, reviews, linked crop cycles (a cycle counts in one POC only), estimated vs verified results, data-completeness score.
+- **Finance**: expense ledger in integer cents, MYR / CNY / SGD / USD with the actual rate and its source, OPEX / CAPEX / deposit / loan / equity kept apart, approval (no self-approval for finance admins), void instead of delete, duplicate detection, straight-line depreciation, cost per kg only from a verified harvest, CSV export. Revenue and profit wait for real sales (v2.1.1).
+- **Evidence vault**: uploads checked by content, SHA-256 per version, confidential by type, verification by someone other than the uploader, archive instead of delete, authenticated downloads only, evidence index export.
+- **Audit trail**: append-only, hash-chained, with before / after values and reasons; verify button detects edited or deleted lines.
+- **Security**: CSP and other headers, CSRF header on all changes, backup restricted to the founder, generic error messages, local-mode business data behind sign-in (first founder created on the AQUA computer only).
+- **Fixed crop-cycle maths**: partial harvests are subtracted from the remaining population; final FCR and verified survival appear only after the cycle is closed.
+- **Tests**: `npm install && npm test` runs 131 checks (roles, finance, POC, evidence security, audit, migration, backup / restore, MQTT / alerts / feeding interlock regression).
+- No firmware change, no MQTT change, no re-flashing.
 
 ## What's new in v2.0.3
 
@@ -146,7 +160,7 @@ Tip: also fill in the real calibration date for PH-01; it is stored as "Not reco
 
 ## 6. Start AQUA (double-click)
 
-1. Unzip `SMARTFUZE-AQUA-v2.0.3.zip` to a simple folder, for example `C:\SMARTFUZE-AQUA`.
+1. Unzip `SMARTFUZE-AQUA-v2.1.0.zip` to a simple folder, for example `C:\SMARTFUZE-AQUA`.
 2. Double-click **`START_AQUA.bat`**.
 
 It will:
@@ -447,6 +461,11 @@ SMARTFUZE-AQUA-v2.0.0/
   lib/aquaculture.js    NH3, dosing, pH compensation, crop-cycle maths
   lib/notify.js         Pushover + watchdog
   lib/bus.js            in-process event bus
+  lib/rbac.js           roles and per-route permissions
+  lib/audit.js          hash-chained audit trail
+  lib/business.js       POC, finance, evidence vault
+  tests/run.js          automated tests (npm test)
+  docs/V2.1.0_GUIDE_ZH.md  v2.1.0 guide (Chinese)
   data/                 your data (state.json, readings/)
   node_modules/         dependencies, pre-installed
 ```
@@ -459,7 +478,10 @@ SMARTFUZE-AQUA-v2.0.0/
 | v2.0.1 | Shrimp RAS safety: life-support sensors, Pushover alerts, watchdog, feeding interlock, water log, crop cycle |
 | v2.0.2 | Cloud mode: login, encrypted device connections, one-line installer, offline buffer |
 | v2.0.3 | Internal event bus; multi-site MQTT topics |
-| v2.0.4 | Dissolved oxygen sensor driver (once the model is chosen), Chinese interface |
+| v2.1.0 | POC research, finance ledger, evidence vault, audit trail, roles |
+| v2.1.1 | Inventory, partner contributions, sales & buyers, incidents, daily operations log |
+| v2.1.2 | Investor center, reports (PDF / Excel), cap table simulator, investor read-only publishing |
+| v2.1.3 | MFA, encrypted and off-site backups, SQLite, security audit, Chinese interface, DO sensor driver |
 | v2.1.0 | Feeding with a real feeder driver, integration improvements |
 | v2.2.0 | Relays: aerator, water pump, actuator automation (with state feedback) |
 | v2.3.0 | CCTV: Tapo, ONVIF / RTSP preview, snapshots, NVR |

@@ -13,7 +13,8 @@ normalize_layout() {
     mkdir -p "$d/$dest"
     for f in "$@"; do if [ -f "$d/$f" ]; then mv "$d/$f" "$d/$dest/$f"; fi; done
   }
-  _mv_to lib alerts.js aquaculture.js auth.js bus.js notify.js ph.js store.js
+  _mv_to lib alerts.js aquaculture.js auth.js bus.js notify.js ph.js store.js rbac.js audit.js business.js
+  _mv_to tests run.js
   _mv_to public app.js index.html manifest.webmanifest styles.css sw.js icon.svg
   _mv_to public/icons apple-touch-icon.png icon-192.png icon-512.png icon-maskable-512.png
   _mv_to cloud install.sh aqua-update aqua-reset-password

@@ -33,7 +33,7 @@ const notify = require('./lib/notify');
 const auth = require('./lib/auth');
 const { Bus } = require('./lib/bus');
 
-const VERSION = '2.0.3';
+const VERSION = '2.1.0';
 const HTTP_PORT = Number(process.env.AQUA_HTTP_PORT || 3000);
 const MQTT_PORT = Number(process.env.AQUA_MQTT_PORT || 1883);
 const DATA_DIR = process.env.AQUA_DATA_DIR || path.join(__dirname, 'data');
@@ -51,6 +51,19 @@ const PUBLIC_HOST = process.env.AQUA_PUBLIC_HOST || '';
 
 const store = new Store(DATA_DIR);
 const S = () => store.state;
+
+// v2.1.0 modules. The loader also accepts a flattened GitHub upload (files not inside lib/).
+function mod(name) {
+  try { return require('./lib/' + name); } catch (e) {
+    if (e.code !== 'MODULE_NOT_FOUND' || !String(e.message).includes(name)) throw e;
+    return require('./' + name);
+  }
+}
+const rbac = mod('rbac');
+const { AuditLog } = mod('audit');
+const { Business } = mod('business');
+const auditLog = new AuditLog(path.join(DATA_DIR, 'audit'));
+const biz = new Business({ dataDir: DATA_DIR, audit: auditLog, getState: S });
 if (!S().settings.publicUrl && (process.env.AQUA_PUBLIC_URL || PUBLIC_HOST)) S().settings.publicUrl = process.env.AQUA_PUBLIC_URL || 'https://' + PUBLIC_HOST;
 
 // ---------------------------------------------------------------- helpers
@@ -654,43 +667,111 @@ function history(pondId, rangeKey) {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 'loopback'); // Caddy runs on the same server in cloud mode
+// security headers for every response
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+  next();
+});
 app.use(express.json({ limit: '200kb' }));
 const api = express.Router();
 const wrap = fn => (req, res) => { try { const out = fn(req, res); if (out instanceof Promise) out.catch(e => fail(res, e)); } catch (e) { fail(res, e); } };
-function fail(res, e) { res.status(e.status || 400).json({ error: e.message || String(e), ...(e.extra || {}) }); }
+function fail(res, e) {
+  if (!e.status && typeof e.code === 'string') { console.error('[api]', e); return res.status(500).json({ error: 'Internal error. See the server log.' }); }
+  res.status(e.status || 400).json({ error: e.message || String(e), ...(e.extra || {}) });
+}
 
-// ---------------- dashboard login (cloud mode)
-const SESSION_DAYS = 90;
+// ---------------- accounts, sessions and role-based access (v2.1.0)
+const SESSION_DAYS_BY_ROLE = { founder: 14, admin: 14, operator: 30, advisor: 30, auditor: 7, investor: 7 };
+const sessionDays = role => SESSION_DAYS_BY_ROLE[role] || 7;
 const loginAttempts = new Map();
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+const strongPassword = pw => typeof pw === 'string' && pw.length >= 12 && /[A-Za-z]/.test(pw) && /\d/.test(pw);
+const PW_RULE = 'Password must be at least 12 characters and contain letters and numbers';
+const USER_RE = /^[A-Za-z0-9._-]{3,32}$/;
+(function migrateAccounts() {
+  // v2.0.x accounts had no role: the installer's account is the founder. Old 90-day sessions are shortened.
+  let changed = false;
+  for (const u of S().auth.users) if (!u.role) { u.role = 'founder'; changed = true; }
+  const cap = Date.now() + 14 * 86400000;
+  for (const x of S().auth.sessions) if (Date.parse(x.expiresAt) > cap) { x.expiresAt = new Date(cap).toISOString(); changed = true; }
+  if (changed) {
+    const src = path.join(DATA_DIR, 'state.json'), keep = path.join(DATA_DIR, 'state.json.pre-2.1.0-backup');
+    if (!fs.existsSync(keep)) fs.copyFileSync(src, keep);
+    store.flush();
+    auditLog.append({ actor: 'system', action: 'migrate.accounts', detail: { note: 'roles added (existing accounts = founder), sessions capped at 14 days' } });
+  }
+})();
 function sessionFrom(req) {
   const tok = auth.parseCookies(req.headers.cookie || '').aqua_session;
   if (!tok) return null;
   const h = auth.sha(tok);
   const sess = S().auth.sessions.find(x => x.hash === h);
-  return sess && Date.parse(sess.expiresAt) > Date.now() ? sess : null;
+  if (!sess || Date.parse(sess.expiresAt) <= Date.now()) return null;
+  const user = S().auth.users.find(u => u.username === sess.username && !u.disabled);
+  return user ? { ...sess, user } : null;
+}
+function contextFor(req) {
+  const sess = sessionFrom(req);
+  if (sess) return { session: sess, user: sess.user.username, role: sess.user.role, ip: req.ip };
+  if (!REQUIRE_LOGIN) return { session: null, user: 'local-network', role: 'local', ip: req.ip };
+  return { session: null, user: null, role: null, ip: req.ip };
+}
+const cx = req => ({ user: req.ctx.user, role: req.ctx.role, ip: req.ctx.ip });
+function startSession(req, res, u) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const days = sessionDays(u.role);
+  const sessions = S().auth.sessions.filter(x => Date.parse(x.expiresAt) > Date.now());
+  sessions.push({ hash: auth.sha(token), username: u.username, createdAt: nowIso(), expiresAt: new Date(Date.now() + days * 86400000).toISOString(), ua: str(req.headers['user-agent'], 120) });
+  S().auth.sessions = sessions.slice(-100);
+  u.lastLoginAt = nowIso();
+  store.save();
+  res.setHeader('Set-Cookie', `aqua_session=${token}; Path=/; Max-Age=${days * 86400}; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}`);
 }
 api.get('/auth/status', wrap((req, res) => {
-  const sess = REQUIRE_LOGIN ? sessionFrom(req) : null;
-  res.json({ required: REQUIRE_LOGIN, loggedIn: !REQUIRE_LOGIN || !!sess, username: sess?.username || null, mode: CLOUD ? 'cloud' : 'local' });
+  const c = contextFor(req);
+  res.json({
+    required: REQUIRE_LOGIN, loggedIn: !!c.session || !REQUIRE_LOGIN, signedIn: !!c.session,
+    username: c.session?.user.username || null, role: c.role, roleLabel: rbac.ROLES[c.role]?.label || (c.role === 'local' ? 'Local network (not signed in)' : null),
+    perms: rbac.PERMS[c.role] || [], mode: CLOUD ? 'cloud' : 'local',
+    needsSetup: S().auth.users.length === 0,
+    canSetup: S().auth.users.length === 0 && !CLOUD && LOOPBACK.has(req.socket.remoteAddress)
+  });
 }));
 api.post('/auth/login', wrap((req, res) => {
   const ip = req.ip || 'unknown';
   const a = loginAttempts.get(ip) || { n: 0, first: Date.now() };
   if (Date.now() - a.first > 15 * 60000) { a.n = 0; a.first = Date.now(); }
   if (a.n >= 10) throw bad('Too many attempts. Wait 15 minutes and try again.', 429);
-  const u = S().auth.users.find(x => x.username === str(req.body?.username, 40));
-  if (!u || !auth.verifySecret(String(req.body?.password || ''), u)) {
+  const name = str(req.body?.username, 40);
+  const u = S().auth.users.find(x => x.username === name);
+  if (!u || u.disabled || !auth.verifySecret(String(req.body?.password || ''), u)) {
     a.n++; loginAttempts.set(ip, a);
+    auditLog.append({ actor: name || '(empty)', ip, action: 'auth.login_failed' });
     throw bad('Wrong username or password', 401);
   }
   loginAttempts.delete(ip);
-  const token = crypto.randomBytes(32).toString('hex');
-  const sessions = S().auth.sessions.filter(x => Date.parse(x.expiresAt) > Date.now());
-  sessions.push({ hash: auth.sha(token), username: u.username, createdAt: nowIso(), expiresAt: new Date(Date.now() + SESSION_DAYS * 86400000).toISOString(), ua: str(req.headers['user-agent'], 120) });
-  S().auth.sessions = sessions.slice(-50);
-  store.save();
-  res.setHeader('Set-Cookie', `aqua_session=${token}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly; SameSite=Lax${req.secure ? '; Secure' : ''}`);
-  res.json({ ok: true, username: u.username });
+  startSession(req, res, u);
+  auditLog.append({ actor: u.username, role: u.role, ip, action: 'auth.login' });
+  res.json({ ok: true, username: u.username, role: u.role });
+}));
+// First founder account on a LOCAL install, from the AQUA computer itself only.
+api.post('/auth/setup', wrap((req, res) => {
+  if (S().auth.users.length) throw bad('An account already exists. Sign in instead.', 409);
+  if (CLOUD || !LOOPBACK.has(req.socket.remoteAddress)) throw bad('The first account can only be created on the AQUA computer itself (http://localhost:3000).', 403);
+  const username = str(req.body?.username, 32);
+  if (!USER_RE.test(username)) throw bad('Username: 3 to 32 letters, numbers, dot, dash or underscore');
+  const pw = String(req.body?.password || '');
+  if (!strongPassword(pw)) throw bad(PW_RULE);
+  const u = { username, role: 'founder', ...auth.hashSecret(pw), createdAt: nowIso(), updatedAt: nowIso() };
+  S().auth.users.push(u);
+  startSession(req, res, u);
+  auditLog.append({ actor: username, role: 'founder', ip: req.ip, action: 'users.setup_founder', entity: 'user', entityId: username });
+  res.status(201).json({ ok: true, username, role: 'founder' });
 }));
 api.post('/auth/logout', wrap((req, res) => {
   const tok = auth.parseCookies(req.headers.cookie || '').aqua_session;
@@ -698,26 +779,88 @@ api.post('/auth/logout', wrap((req, res) => {
   res.setHeader('Set-Cookie', 'aqua_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
   res.json({ ok: true });
 }));
-// Everything below needs a session in cloud mode. State changes also need the X-AQUA header,
+// Every other API call: role check on the server. State changes also need the X-AQUA header,
 // which a foreign website cannot add (blocks cross-site request forgery).
 api.use((req, res, next) => {
-  if (!REQUIRE_LOGIN) return next();
-  const sess = sessionFrom(req);
-  if (!sess) return res.status(401).json({ error: 'Login required' });
+  const c = contextFor(req);
+  req.ctx = c;
+  const perm = rbac.permFor(req.method, req.path);
+  if (perm === 'public') return next();
   if (req.method !== 'GET' && req.get('X-AQUA') !== '1') return res.status(403).json({ error: 'Missing request header' });
-  req.session = sess;
+  if (!c.role) return res.status(401).json({ error: 'Login required' });
+  if (perm === 'deny') return res.status(404).json({ error: 'Unknown API route' });
+  if (perm === 'auth') { if (!c.session) return res.status(401).json({ error: 'Sign in required', signIn: true }); }
+  else if (!rbac.can(c.role, perm)) {
+    if (!c.session) return res.status(401).json({ error: 'Sign in to use this part of AQUA', signIn: true });
+    return res.status(403).json({ error: 'Your role does not allow this' });
+  }
+  req.session = c.session;
+  next();
+});
+// audit every successful change to monitoring data / settings (business modules log their own detail)
+api.use((req, res, next) => {
+  if (req.method === 'GET' || /^\/(poc|finance|evidence|users|auth)(\/|$)/.test(req.path)) return next();
+  res.on('finish', () => {
+    if (res.statusCode >= 400) return;
+    auditLog.append({ actor: req.ctx.user, role: req.ctx.role, ip: req.ctx.ip, action: 'api.' + req.method.toLowerCase(), entity: 'monitoring', entityId: req.path,
+      detail: { body: req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? req.body : null, status: res.statusCode } });
+  });
   next();
 });
 api.post('/auth/password', wrap((req, res) => {
   const u = S().auth.users.find(x => x.username === req.session?.username);
-  if (!u) throw bad('Password change needs login mode');
+  if (!u) throw bad('Sign in first');
   if (!auth.verifySecret(String(req.body?.current || ''), u)) throw bad('Current password is wrong', 401);
   const pw = String(req.body?.password || '');
-  if (pw.length < 10) throw bad('New password must be at least 10 characters');
+  if (!strongPassword(pw)) throw bad(PW_RULE);
   Object.assign(u, auth.hashSecret(pw), { updatedAt: nowIso() });
-  S().auth.sessions = S().auth.sessions.filter(x => x.hash === req.session.hash); // sign out other phones
+  S().auth.sessions = S().auth.sessions.filter(x => x.username !== u.username || x.hash === req.session.hash); // sign out other devices
   store.save();
+  auditLog.append({ actor: u.username, role: u.role, ip: req.ip, action: 'auth.password_changed', entity: 'user', entityId: u.username });
   res.json({ ok: true });
+}));
+api.get('/me', wrap((req, res) => res.json({ username: req.ctx.user, role: req.ctx.role, roleLabel: rbac.ROLES[req.ctx.role]?.label, perms: rbac.PERMS[req.ctx.role] || [] })));
+
+// ---------------- user management (founder only)
+const userOut = u => ({ username: u.username, role: u.role, roleLabel: rbac.ROLES[u.role]?.label, disabled: !!u.disabled, createdAt: u.createdAt || null, lastLoginAt: u.lastLoginAt || null,
+  activeSessions: S().auth.sessions.filter(x => x.username === u.username && Date.parse(x.expiresAt) > Date.now()).length });
+const tempPassword = () => auth.randomPassword(14) + String(crypto.randomInt(10, 99));
+function founderCount() { return S().auth.users.filter(u => u.role === 'founder' && !u.disabled).length; }
+api.get('/users', wrap((req, res) => res.json({ users: S().auth.users.map(userOut), roles: rbac.ROLES, perms: rbac.PERMS })));
+api.post('/users', wrap((req, res) => {
+  const username = str(req.body?.username, 32), role = str(req.body?.role, 20);
+  if (!USER_RE.test(username)) throw bad('Username: 3 to 32 letters, numbers, dot, dash or underscore');
+  if (!rbac.ROLES[role]) throw bad('Choose a role');
+  if (S().auth.users.some(u => u.username.toLowerCase() === username.toLowerCase())) throw bad('That username exists already', 409);
+  const pw = req.body?.password ? String(req.body.password) : tempPassword();
+  if (!strongPassword(pw)) throw bad(PW_RULE);
+  const u = { username, role, ...auth.hashSecret(pw), createdAt: nowIso(), updatedAt: nowIso(), createdBy: req.ctx.user };
+  S().auth.users.push(u); store.save();
+  auditLog.append({ ...cx(req), action: 'users.create', entity: 'user', entityId: username, after: { username, role } });
+  res.status(201).json({ user: userOut(u), tempPassword: req.body?.password ? null : pw });
+}));
+api.put('/users/:u', wrap((req, res) => {
+  const u = S().auth.users.find(x => x.username === req.params.u);
+  if (!u) throw bad('User not found', 404);
+  const before = { role: u.role, disabled: !!u.disabled };
+  if (req.body?.role !== undefined) { if (!rbac.ROLES[req.body.role]) throw bad('Unknown role'); u.role = req.body.role; }
+  if (req.body?.disabled !== undefined) u.disabled = !!req.body.disabled;
+  if (u.username === req.ctx.user && (u.role !== 'founder' || u.disabled)) { Object.assign(u, before); throw bad('You cannot remove your own founder access'); }
+  if (founderCount() === 0) { Object.assign(u, before); throw bad('At least one active founder account is required'); }
+  if (u.role !== before.role || u.disabled !== before.disabled) S().auth.sessions = S().auth.sessions.filter(x => x.username !== u.username);
+  u.updatedAt = nowIso(); store.save();
+  auditLog.append({ ...cx(req), action: 'users.update', entity: 'user', entityId: u.username, before, after: { role: u.role, disabled: !!u.disabled } });
+  res.json(userOut(u));
+}));
+api.post('/users/:u/reset-password', wrap((req, res) => {
+  const u = S().auth.users.find(x => x.username === req.params.u);
+  if (!u) throw bad('User not found', 404);
+  const pw = tempPassword();
+  Object.assign(u, auth.hashSecret(pw), { updatedAt: nowIso() });
+  S().auth.sessions = S().auth.sessions.filter(x => x.username !== u.username);
+  store.save();
+  auditLog.append({ ...cx(req), action: 'users.reset_password', entity: 'user', entityId: u.username });
+  res.json({ tempPassword: pw });
 }));
 
 // ---------------- ESP32 device logins
@@ -1178,12 +1321,85 @@ api.post('/notify/test', wrap(async (req, res) => {
   if (!r.ok) throw bad('Push failed: ' + (r.error || 'unknown error'));
   res.json(r);
 }));
+// ---------------- POC research
+api.get('/poc/meta', wrap((req, res) => res.json(biz.meta())));
+api.get('/poc', wrap((req, res) => res.json(biz.listPoc())));
+api.post('/poc', wrap((req, res) => res.status(201).json(biz.createPoc(req.body, cx(req)))));
+api.get('/poc/:id', wrap((req, res) => res.json(biz.getPoc(req.params.id))));
+api.put('/poc/:id', wrap((req, res) => res.json(biz.updatePoc(req.params.id, req.body, cx(req)))));
+api.post('/poc/:id/status', wrap((req, res) => res.json(biz.setPocStatus(req.params.id, req.body, cx(req)))));
+api.post('/poc/:id/reviews', wrap((req, res) => res.json(biz.addReview(req.params.id, req.body, cx(req)))));
+api.post('/poc/:id/cycles', wrap((req, res) => res.json(biz.linkCycle(req.params.id, str(req.body?.cycleId, 40), cx(req)))));
+api.delete('/poc/:id/cycles/:cid', wrap((req, res) => res.json(biz.unlinkCycle(req.params.id, req.params.cid, cx(req)))));
+
+// ---------------- finance
+const fq = q => ({ pocId: str(q.pocId, 40) || undefined, cycleId: str(q.cycleId, 40) || undefined, nature: str(q.nature, 10) || undefined, category: str(q.category, 60) || undefined,
+  status: str(q.status, 20) || undefined, from: str(q.from, 10) || undefined, to: str(q.to, 10) || undefined, q: str(q.q, 80) || undefined });
+api.get('/finance/expenses', wrap((req, res) => res.json(biz.listExpenses(fq(req.query)))));
+api.get('/finance/expenses.csv', wrap((req, res) => {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="aqua-expenses-${localDay()}.csv"`);
+  auditLog.append({ ...cx(req), action: 'finance.export', detail: fq(req.query) });
+  res.send(biz.expensesCsv(fq(req.query)));
+}));
+api.get('/finance/summary', wrap((req, res) => res.json(biz.financeSummary(fq(req.query)))));
+api.post('/finance/expenses', wrap((req, res) => res.status(201).json(biz.createExpense(req.body, cx(req)))));
+api.put('/finance/expenses/:id', wrap((req, res) => res.json(biz.updateExpense(req.params.id, req.body, cx(req)))));
+api.post('/finance/expenses/:id/approve', wrap((req, res) => res.json(biz.reviewExpense(req.params.id, 'approve', req.body, cx(req)))));
+api.post('/finance/expenses/:id/reject', wrap((req, res) => res.json(biz.reviewExpense(req.params.id, 'reject', req.body, cx(req)))));
+api.post('/finance/expenses/:id/payment', wrap((req, res) => res.json(biz.markPaid(req.params.id, req.body, cx(req)))));
+api.post('/finance/expenses/:id/void', wrap((req, res) => res.json(biz.voidExpense(req.params.id, req.body, cx(req)))));
+
+// ---------------- evidence vault (files are never served as public static files)
+const rawUpload = express.raw({ type: () => true, limit: '50mb' });
+function evMeta(req) {
+  const h = req.get('X-Evidence-Meta');
+  if (!h) return {};
+  try { return JSON.parse(Buffer.from(h, 'base64').toString('utf8')); } catch (_) { throw bad('Invalid upload details'); }
+}
+const seeAll = req => rbac.can(req.ctx.role, 'evidence.read.all');
+api.get('/evidence', wrap((req, res) => res.json(biz.listEvidence({ type: str(req.query.type, 30), verification: str(req.query.verification, 20), q: str(req.query.q, 80),
+  linkType: str(req.query.linkType, 10), linkId: str(req.query.linkId, 40), archived: req.query.archived === '1' }, cx(req), seeAll(req)))));
+api.get('/evidence/index.csv', wrap((req, res) => {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="aqua-evidence-index-${localDay()}.csv"`);
+  auditLog.append({ ...cx(req), action: 'evidence.export_index' });
+  res.send(biz.evidenceIndexCsv(cx(req), seeAll(req)));
+}));
+api.post('/evidence', rawUpload, wrap((req, res) => res.status(201).json(biz.createEvidence(req.body, evMeta(req), cx(req)))));
+api.post('/evidence/:id/versions', rawUpload, wrap((req, res) => res.status(201).json(biz.addVersion(req.params.id, req.body, evMeta(req), cx(req)))));
+api.put('/evidence/:id', wrap((req, res) => res.json(biz.updateEvidence(req.params.id, req.body, cx(req)))));
+api.post('/evidence/:id/verify', wrap((req, res) => res.json(biz.verifyEvidence(req.params.id, req.body, cx(req)))));
+api.post('/evidence/:id/archive', wrap((req, res) => res.json(biz.setArchived(req.params.id, true, req.body, cx(req)))));
+api.post('/evidence/:id/restore', wrap((req, res) => res.json(biz.setArchived(req.params.id, false, req.body, cx(req)))));
+api.get('/evidence/:id/check', wrap((req, res) => res.json(biz.checkIntegrity(req.params.id, cx(req), seeAll(req)))));
+api.get('/evidence/:id/file', wrap((req, res) => {
+  const { abs, ver, ev } = biz.evidenceFile(req.params.id, req.query.v, cx(req), seeAll(req));
+  auditLog.append({ ...cx(req), action: 'evidence.download', entity: 'evidence', entityId: ev.id, detail: { version: ver.v } });
+  const inline = req.query.inline === '1' && /^(image\/(png|jpeg|webp)|application\/pdf)$/.test(ver.mime);
+  res.setHeader('Content-Type', ver.mime);
+  res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${ev.id}-v${ver.v}.${ver.ext}"; filename*=UTF-8''${encodeURIComponent(ver.originalName)}`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self'; object-src 'self'");
+  fs.createReadStream(abs).pipe(res);
+}));
+
+// ---------------- audit trail
+api.get('/audit', wrap((req, res) => res.json(auditLog.query({ entity: str(req.query.entity, 30) || undefined, entityId: str(req.query.entityId, 80) || undefined,
+  actor: str(req.query.actor, 40) || undefined, action: str(req.query.action, 40) || undefined, limit: Math.min(Number(req.query.limit) || 200, 1000) }))));
+api.get('/audit/verify', wrap((req, res) => res.json(auditLog.verify())));
+
 api.get('/backup', wrap((req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="aqua-config-backup-${localDay()}.json"`);
-  res.json({ exportedAt: nowIso(), version: VERSION, note: 'Contains notification keys. Keep this file private.', state: S() });
+  auditLog.append({ ...cx(req), action: 'backup.download' });
+  res.json({ exportedAt: nowIso(), version: VERSION, note: 'Contains notification keys, password hashes and business records. Keep this file private. Evidence files are not included: copy the data/evidence folder.', state: S(), business: biz.db });
 }));
 
 api.use((req, res) => res.status(404).json({ error: 'Unknown API route' }));
+api.use((err, req, res, next) => { // body parser errors (too large, broken JSON)
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'File or request is too large (max 50 MB)' });
+  res.status(400).json({ error: 'The request could not be read' });
+});
 app.use('/api', api);
 
 const pub = path.join(__dirname, 'public');
@@ -1207,7 +1423,7 @@ for (const p of Object.values(S().ponds)) {
 const httpServer = http.createServer(app);
 wss = new WebSocketServer({
   server: httpServer, path: '/ws',
-  verifyClient: (info, cb) => (REQUIRE_LOGIN ? cb(!!sessionFrom(info.req), 401) : cb(true))
+  verifyClient: (info, cb) => { const c = contextFor(info.req); cb(!!c.role && rbac.can(c.role, 'monitor.read'), 401); }
 });
 wss.on('connection', ws => ws.send(JSON.stringify({ type: 'hello', version: VERSION, serverTime: nowIso(), ponds: pondList() })));
 setInterval(() => { for (const c of wss.clients) { try { c.ping(); } catch (_) {} } }, 30000);
