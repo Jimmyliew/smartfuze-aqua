@@ -13,7 +13,11 @@ normalize_layout() {
     mkdir -p "$d/$dest"
     for f in "$@"; do if [ -f "$d/$f" ]; then mv "$d/$f" "$d/$dest/$f"; fi; done
   }
-  _mv_to lib alerts.js aquaculture.js auth.js bus.js notify.js ph.js store.js rbac.js audit.js business.js
+  _mv_to lib alerts.js aquaculture.js auth.js bus.js notify.js ph.js store.js rbac.js audit.js business.js receipt.js
+  _mv_to public/vendor/ocr tesseract.min.js worker.min.js LICENSE-tesseract.js.txt
+  _mv_to public/vendor/ocr/core tesseract-core-lstm.wasm.js tesseract-core-simd-lstm.wasm.js
+  _mv_to public/vendor/ocr/lang eng.traineddata.gz chi_sim.traineddata.gz msa.traineddata.gz
+  _mv_to public/vendor/pdf pdf.min.js pdf.worker.min.js LICENSE-pdfjs.txt
   _mv_to tests run.js
   _mv_to public app.js index.html manifest.webmanifest styles.css sw.js icon.svg
   _mv_to public/icons apple-touch-icon.png icon-192.png icon-512.png icon-maskable-512.png
@@ -30,12 +34,49 @@ normalize_layout() {
   echo "文件整理完成。"
 }
 
+# Simplest update: upload ONE zip (SMARTFUZE-AQUA-x.y.z-github-upload.zip) to the GitHub repository.
+# If the download contains a zip with AQUA inside, the newest one (by version in its name) is used.
+use_zip_if_present() {
+  local d="$1" z x top
+  z="$(find "$d" -maxdepth 1 -type f -iname '*.zip' | sort -V | tail -n 1)"
+  [ -n "$z" ] || return 0
+  echo "发现压缩包 $(basename "$z")，使用里面的版本 ..."
+  x="$(mktemp -d)"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$z" "$x" <<'PY' || { rm -rf "$x"; return 1; }
+import os, sys, zipfile
+src, out = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(src) as f:
+    for m in f.infolist():
+        p = os.path.normpath(m.filename)
+        if p.startswith('..') or os.path.isabs(p) or ':' in p:
+            sys.exit('压缩包里有不安全的路径: ' + m.filename)
+    f.extractall(out)
+PY
+  else
+    apt-get install -y unzip >/dev/null 2>&1 || true
+    unzip -q "$z" -d "$x" || { rm -rf "$x"; return 1; }
+  fi
+  top="$x"
+  if [ ! -f "$top/server.js" ] && [ "$(find "$x" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]; then
+    top="$(find "$x" -mindepth 1 -maxdepth 1 -type d)"
+  fi
+  if [ ! -f "$top/server.js" ] && [ ! -f "$top/lib/store.js" ] && [ ! -f "$top/store.js" ]; then
+    echo "压缩包 $(basename "$z") 里找不到 AQUA 程序 (server.js)"; rm -rf "$x"; return 1
+  fi
+  find "$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  cp -a "$top"/. "$d"/
+  rm -rf "$x" "$d/node_modules" "$d/data"
+  echo "已使用压缩包里的程序。"
+}
+
 [ "$(id -u)" -eq 0 ] || { echo "请用 sudo aqua-update"; exit 1; }
 REPO="$(sed -n 1p /etc/aqua/repo)"; BRANCH="$(sed -n 2p /etc/aqua/repo)"
 APP=/opt/aqua
 TMP="$(mktemp -d)"
 echo "下载 $REPO ($BRANCH) ..."
 curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" | tar xz -C "$TMP" --strip-components=1
+use_zip_if_present "$TMP" || { echo "已取消更新，现有版本继续运行"; exit 1; }
 [ -f "$TMP/server.js" ] || { echo "下载内容不完整，已取消"; exit 1; }
 normalize_layout "$TMP" || { echo "已取消更新，现有版本继续运行"; exit 1; }
 rm -rf "$APP.new"; mkdir -p "$APP.new"; cp -a "$TMP"/. "$APP.new"/; rm -rf "$APP.new/data" "$APP.new/node_modules" "$TMP"
